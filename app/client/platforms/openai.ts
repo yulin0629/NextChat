@@ -199,8 +199,12 @@ export class ChatGPTApi implements LLMApi {
     const isO1OrO3 =
       options.config.model.startsWith("o1") ||
       options.config.model.startsWith("o3") ||
-      options.config.model.startsWith("o4-mini");
-    const isGpt5 =  options.config.model.startsWith("gpt-5");
+      options.config.model.startsWith("o4-mini") ||
+      options.config.model.includes("k3");
+    const isGpt5 = options.config.model.startsWith("gpt-5");
+    const isNoTempModel =
+      options.config.model.includes("opus-5") ||
+      options.config.model.includes("fable-5");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
@@ -231,13 +235,18 @@ export class ChatGPTApi implements LLMApi {
         messages,
         stream: options.config.stream,
         model: modelConfig.model,
-        temperature: (!isO1OrO3 && !isGpt5) ? modelConfig.temperature : 1,
+        temperature: (!isO1OrO3 && !isGpt5 && !isNoTempModel) ? modelConfig.temperature : 1,
         presence_penalty: !isO1OrO3 ? modelConfig.presence_penalty : 0,
         frequency_penalty: !isO1OrO3 ? modelConfig.frequency_penalty : 0,
         top_p: !isO1OrO3 ? modelConfig.top_p : 1,
         // max_tokens: Math.max(modelConfig.max_tokens, 1024),
         // Please do not ask me why not send max_tokens, no reason, this param is just shit, I dont want to explain anymore.
       };
+
+      if (isNoTempModel) {
+        delete requestPayload.temperature;
+        delete requestPayload.top_p;
+      }
 
       if (isGpt5) {
   	// Remove max_tokens if present

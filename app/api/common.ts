@@ -138,6 +138,38 @@ export async function requestOpenai(req: NextRequest) {
           },
         );
       }
+
+      // Sanitize model parameters for next-gen models:
+      // 1. Claude Opus 5 / Fable 5.1 deprecate temperature & top_p
+      // 2. Kimi K3 / o1 / o3 only support temperature=1 or omitted
+      if (jsonBody?.model) {
+        let modified = false;
+        const m = jsonBody.model.toLowerCase();
+        const isNoTemp = m.includes("opus-5") || m.includes("fable-5");
+        const isReasoningFixedTemp =
+          m.includes("k3") ||
+          m.startsWith("o1") ||
+          m.startsWith("o3") ||
+          m.startsWith("o4");
+
+        if (isNoTemp) {
+          delete (jsonBody as any).temperature;
+          delete (jsonBody as any).top_p;
+          modified = true;
+        } else if (isReasoningFixedTemp) {
+          if (
+            (jsonBody as any).temperature !== undefined &&
+            (jsonBody as any).temperature !== 1
+          ) {
+            (jsonBody as any).temperature = 1;
+            modified = true;
+          }
+        }
+
+        if (modified) {
+          fetchOptions.body = JSON.stringify(jsonBody);
+        }
+      }
     } catch (e) {
       console.error("[OpenAI] gpt4 filter", e);
     }
