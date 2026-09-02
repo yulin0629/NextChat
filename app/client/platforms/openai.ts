@@ -244,8 +244,8 @@ export class ChatGPTApi implements LLMApi {
       };
 
       if (isNoTempModel) {
-        delete requestPayload.temperature;
-        delete requestPayload.top_p;
+        delete (requestPayload as any).temperature;
+        delete (requestPayload as any).top_p;
       }
 
       if (
@@ -265,10 +265,10 @@ export class ChatGPTApi implements LLMApi {
       }
 
       if (isGpt5) {
-  	// Remove max_tokens if present
-  	delete requestPayload.max_tokens;
-  	// Add max_completion_tokens (or max_completion_tokens if that's what you meant)
-  	requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
+        // Remove max_tokens if present
+        delete (requestPayload as any).max_tokens;
+        // Add max_completion_tokens (or max_completion_tokens if that's what you meant)
+        requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
 
       } else if (isO1OrO3) {
         // by default the o1/o3 models will not attempt to produce output that includes markdown formatting
