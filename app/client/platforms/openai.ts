@@ -248,6 +248,22 @@ export class ChatGPTApi implements LLMApi {
         delete requestPayload.top_p;
       }
 
+      if (
+        requestPayload.presence_penalty === 0 ||
+        options.config.model.includes("grok") ||
+        isNoTempModel
+      ) {
+        delete (requestPayload as any).presence_penalty;
+      }
+
+      if (
+        requestPayload.frequency_penalty === 0 ||
+        options.config.model.includes("grok") ||
+        isNoTempModel
+      ) {
+        delete (requestPayload as any).frequency_penalty;
+      }
+
       if (isGpt5) {
   	// Remove max_tokens if present
   	delete requestPayload.max_tokens;

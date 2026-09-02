@@ -166,6 +166,24 @@ export async function requestOpenai(req: NextRequest) {
           }
         }
 
+        if (
+          (jsonBody as any).presence_penalty === 0 ||
+          m.includes("grok") ||
+          isNoTemp
+        ) {
+          delete (jsonBody as any).presence_penalty;
+          modified = true;
+        }
+
+        if (
+          (jsonBody as any).frequency_penalty === 0 ||
+          m.includes("grok") ||
+          isNoTemp
+        ) {
+          delete (jsonBody as any).frequency_penalty;
+          modified = true;
+        }
+
         if (modified) {
           fetchOptions.body = JSON.stringify(jsonBody);
         }
