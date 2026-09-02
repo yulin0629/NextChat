@@ -293,7 +293,8 @@ export function isVisionModel(model: string) {
 }
 
 export function isDalle3(model: string) {
-  return "dall-e-3" === model;
+  const m = model.toLowerCase();
+  return m === "dall-e-3" || m.startsWith("dall-e") || m.includes("image");
 }
 
 export function getTimeoutMSByModel(model: string) {

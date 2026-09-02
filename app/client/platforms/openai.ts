@@ -199,8 +199,7 @@ export class ChatGPTApi implements LLMApi {
     const isO1OrO3 =
       options.config.model.startsWith("o1") ||
       options.config.model.startsWith("o3") ||
-      options.config.model.startsWith("o4-mini") ||
-      options.config.model.includes("k3");
+      options.config.model.startsWith("o4-mini");
     const isGpt5 = options.config.model.startsWith("gpt-5");
     const isNoSamplingModel =
       options.config.model.includes("claude") ||
@@ -219,6 +218,10 @@ export class ChatGPTApi implements LLMApi {
         quality: options.config?.quality ?? "standard",
         style: options.config?.style ?? "vivid",
       };
+
+      if (options.config.model.toLowerCase().includes("image")) {
+        delete (requestPayload as any).style;
+      }
     } else {
       const visionModel = isVisionModel(options.config.model);
       const messages: ChatOptions["messages"] = [];

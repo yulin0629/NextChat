@@ -185,6 +185,20 @@ export async function requestOpenai(req: NextRequest) {
           modified = true;
         }
 
+        if (m.includes("image") && (jsonBody as any).style) {
+          delete (jsonBody as any).style;
+          modified = true;
+        }
+
+        if (!isO1OrO3 && Array.isArray(jsonBody.messages)) {
+          for (const msg of jsonBody.messages) {
+            if (msg.role === "developer") {
+              msg.role = "system";
+              modified = true;
+            }
+          }
+        }
+
         if (modified) {
           fetchOptions.body = JSON.stringify(jsonBody);
         }
