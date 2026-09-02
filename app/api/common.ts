@@ -190,8 +190,8 @@ export async function requestOpenai(req: NextRequest) {
           modified = true;
         }
 
-        if (!isO1OrO3 && Array.isArray(jsonBody.messages)) {
-          for (const msg of jsonBody.messages) {
+        if (!isO1OrO3 && Array.isArray((jsonBody as any).messages)) {
+          for (const msg of (jsonBody as any).messages) {
             if (msg.role === "developer") {
               msg.role = "system";
               modified = true;
