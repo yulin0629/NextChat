@@ -203,8 +203,7 @@ export class ChatGPTApi implements LLMApi {
       options.config.model.includes("k3");
     const isGpt5 = options.config.model.startsWith("gpt-5");
     const isNoSamplingModel =
-      options.config.model.includes("opus-5") ||
-      options.config.model.includes("fable-5") ||
+      options.config.model.includes("claude") ||
       options.config.model.includes("k3");
     if (isDalle3) {
       const prompt = getMessageTextContent(

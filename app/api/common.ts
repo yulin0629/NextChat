@@ -146,8 +146,7 @@ export async function requestOpenai(req: NextRequest) {
         let modified = false;
         const m = jsonBody.model.toLowerCase();
         const isStrictReasoning =
-          m.includes("opus-5") ||
-          m.includes("fable-5") ||
+          m.includes("claude") ||
           m.includes("k3");
         const isO1OrO3 =
           m.startsWith("o1") ||
