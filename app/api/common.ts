@@ -145,18 +145,22 @@ export async function requestOpenai(req: NextRequest) {
       if (jsonBody?.model) {
         let modified = false;
         const m = jsonBody.model.toLowerCase();
-        const isNoTemp = m.includes("opus-5") || m.includes("fable-5");
-        const isReasoningFixedTemp =
-          m.includes("k3") ||
+        const isStrictReasoning =
+          m.includes("opus-5") ||
+          m.includes("fable-5") ||
+          m.includes("k3");
+        const isO1OrO3 =
           m.startsWith("o1") ||
           m.startsWith("o3") ||
           m.startsWith("o4");
 
-        if (isNoTemp) {
+        if (isStrictReasoning) {
           delete (jsonBody as any).temperature;
           delete (jsonBody as any).top_p;
+          delete (jsonBody as any).presence_penalty;
+          delete (jsonBody as any).frequency_penalty;
           modified = true;
-        } else if (isReasoningFixedTemp) {
+        } else if (isO1OrO3) {
           if (
             (jsonBody as any).temperature !== undefined &&
             (jsonBody as any).temperature !== 1
@@ -168,8 +172,7 @@ export async function requestOpenai(req: NextRequest) {
 
         if (
           (jsonBody as any).presence_penalty === 0 ||
-          m.includes("grok") ||
-          isNoTemp
+          m.includes("grok")
         ) {
           delete (jsonBody as any).presence_penalty;
           modified = true;
@@ -177,8 +180,7 @@ export async function requestOpenai(req: NextRequest) {
 
         if (
           (jsonBody as any).frequency_penalty === 0 ||
-          m.includes("grok") ||
-          isNoTemp
+          m.includes("grok")
         ) {
           delete (jsonBody as any).frequency_penalty;
           modified = true;

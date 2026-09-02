@@ -202,9 +202,10 @@ export class ChatGPTApi implements LLMApi {
       options.config.model.startsWith("o4-mini") ||
       options.config.model.includes("k3");
     const isGpt5 = options.config.model.startsWith("gpt-5");
-    const isNoTempModel =
+    const isNoSamplingModel =
       options.config.model.includes("opus-5") ||
-      options.config.model.includes("fable-5");
+      options.config.model.includes("fable-5") ||
+      options.config.model.includes("k3");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
@@ -235,7 +236,7 @@ export class ChatGPTApi implements LLMApi {
         messages,
         stream: options.config.stream,
         model: modelConfig.model,
-        temperature: (!isO1OrO3 && !isGpt5 && !isNoTempModel) ? modelConfig.temperature : 1,
+        temperature: (!isO1OrO3 && !isGpt5 && !isNoSamplingModel) ? modelConfig.temperature : 1,
         presence_penalty: !isO1OrO3 ? modelConfig.presence_penalty : 0,
         frequency_penalty: !isO1OrO3 ? modelConfig.frequency_penalty : 0,
         top_p: !isO1OrO3 ? modelConfig.top_p : 1,
@@ -243,23 +244,23 @@ export class ChatGPTApi implements LLMApi {
         // Please do not ask me why not send max_tokens, no reason, this param is just shit, I dont want to explain anymore.
       };
 
-      if (isNoTempModel) {
+      if (isNoSamplingModel) {
         delete (requestPayload as any).temperature;
         delete (requestPayload as any).top_p;
+        delete (requestPayload as any).presence_penalty;
+        delete (requestPayload as any).frequency_penalty;
       }
 
       if (
         requestPayload.presence_penalty === 0 ||
-        options.config.model.includes("grok") ||
-        isNoTempModel
+        options.config.model.includes("grok")
       ) {
         delete (requestPayload as any).presence_penalty;
       }
 
       if (
         requestPayload.frequency_penalty === 0 ||
-        options.config.model.includes("grok") ||
-        isNoTempModel
+        options.config.model.includes("grok")
       ) {
         delete (requestPayload as any).frequency_penalty;
       }
