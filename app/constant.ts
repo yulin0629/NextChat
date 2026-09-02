@@ -479,10 +479,9 @@ export const VISION_MODEL_REGEXES = [
   /vision/,
   /gpt-4o/,
   /gpt-4\.1/,
-  /claude.*[34]/,
-  /gemini-1\.5/,
+  /claude.*[345]/,
+  /gemini-[123]/,
   /gemini-exp/,
-  /gemini-2\.[05]/,
   /learnlm/,
   /qwen-vl/,
   /qwen2-vl/,
@@ -561,7 +560,11 @@ const googleModels = [
   "gemini-2.0-pro-exp",
   "gemini-2.0-pro-exp-02-05",
   "gemini-2.5-pro-preview-06-05",
-  "gemini-2.5-pro"
+  "gemini-2.5-pro",
+  "gemini-3.8-flash",
+  "gemini-3.8-flash-high",
+  "gemini-3.8-flash-medium",
+  "gemini-3.8-flash-low",
 ];
 
 const anthropicModels = [
