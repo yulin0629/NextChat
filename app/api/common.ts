@@ -108,8 +108,8 @@ export async function requestOpenai(req: NextRequest) {
     signal: controller.signal,
   };
 
-  // #1815 try to refuse gpt4 request
-  if (serverConfig.customModels && req.body) {
+  // #1815 try to refuse gpt4 request and sanitize model parameters
+  if (req.body) {
     try {
       const clonedBody = await req.text();
       fetchOptions.body = clonedBody;
@@ -118,6 +118,7 @@ export async function requestOpenai(req: NextRequest) {
 
       // not undefined and is false
       if (
+        serverConfig.customModels &&
         isModelNotavailableInServer(
           serverConfig.customModels,
           jsonBody?.model as string,
@@ -187,7 +188,7 @@ export async function requestOpenai(req: NextRequest) {
           modified = true;
         }
 
-        if (m.includes("image") && (jsonBody as any).style) {
+        if (m.startsWith("gpt-image") && (jsonBody as any).style) {
           delete (jsonBody as any).style;
           modified = true;
         }

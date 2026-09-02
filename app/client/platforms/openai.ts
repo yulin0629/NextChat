@@ -196,14 +196,16 @@ export class ChatGPTApi implements LLMApi {
     let requestPayload: RequestPayload | DalleRequestPayload;
 
     const isDalle3 = _isDalle3(options.config.model);
+    const m = options.config.model.toLowerCase();
     const isO1OrO3 =
-      options.config.model.startsWith("o1") ||
-      options.config.model.startsWith("o3") ||
-      options.config.model.startsWith("o4-mini");
-    const isGpt5 = options.config.model.startsWith("gpt-5");
+      m.startsWith("o1") ||
+      m.startsWith("o3") ||
+      m.startsWith("o4");
+    const isGpt5 = m.startsWith("gpt-5");
     const isNoSamplingModel =
-      options.config.model.includes("claude") ||
-      options.config.model.includes("k3");
+      m.includes("claude") ||
+      m.includes("k3") ||
+      m.includes("fable");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
@@ -219,7 +221,7 @@ export class ChatGPTApi implements LLMApi {
         style: options.config?.style ?? "vivid",
       };
 
-      if (options.config.model.toLowerCase().includes("image")) {
+      if (m.startsWith("gpt-image")) {
         delete (requestPayload as any).style;
       }
     } else {
