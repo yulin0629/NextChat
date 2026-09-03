@@ -297,15 +297,19 @@ export function isDalle3(model: string) {
   return m === "dall-e-3" || m.startsWith("gpt-image");
 }
 
-export function getTimeoutMSByModel(model: string) {
-  model = model.toLowerCase();
+export function getTimeoutMSByModel(model?: string) {
+  if (!model) return REQUEST_TIMEOUT_MS;
+  const m = model.toLowerCase();
   if (
-    model.startsWith("dall-e") ||
-    model.startsWith("dalle") ||
-    model.startsWith("o1") ||
-    model.startsWith("o3") ||
-    model.includes("deepseek-r") ||
-    model.includes("-thinking")
+    m.startsWith("dall-e") ||
+    m.startsWith("dalle") ||
+    m.startsWith("o1") ||
+    m.startsWith("o3") ||
+    m.includes("deepseek-r") ||
+    m.includes("-thinking") ||
+    m.includes("qwen") ||
+    m.includes("k3") ||
+    m.includes("modal")
   )
     return REQUEST_TIMEOUT_MS_FOR_THINKING;
   return REQUEST_TIMEOUT_MS;
