@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSideConfig } from "../config/server";
 import { OPENAI_BASE_URL, ServiceProvider } from "../constant";
 import { cloudflareAIGatewayUrl } from "../utils/cloudflare";
-import { getModelProvider, isModelNotavailableInServer } from "../utils/model";
+import { getModelProvider } from "../utils/model";
 
 const serverConfig = getServerSideConfig();
 
@@ -116,31 +116,7 @@ export async function requestOpenai(req: NextRequest) {
 
       const jsonBody = JSON.parse(clonedBody) as { model?: string };
 
-      // not undefined and is false
-      if (
-        serverConfig.customModels &&
-        isModelNotavailableInServer(
-          serverConfig.customModels,
-          jsonBody?.model as string,
-          [
-            ServiceProvider.OpenAI,
-            ServiceProvider.Azure,
-            ServiceProvider.Google,
-            ServiceProvider.Anthropic,
-            jsonBody?.model as string, // support provider-unspecified model
-          ],
-        )
-      ) {
-        return NextResponse.json(
-          {
-            error: true,
-            message: `you are not allowed to use ${jsonBody?.model} model`,
-          },
-          {
-            status: 403,
-          },
-        );
-      }
+      // Server-side model restriction relaxed: dynamic and custom models are authenticated & dispatched by Sub2API
 
       // Sanitize model parameters for next-gen models:
       // 1. Claude Opus 5 / Fable 5.1 deprecate temperature & top_p
