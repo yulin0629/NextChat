@@ -66,8 +66,9 @@ export const FunctionToolService = {
       const { openaiApiKey, accessCode } = useAccessStore.getState();
       if (openaiApiKey) {
         headers[headerName] = `Bearer ${openaiApiKey}`;
-      } else if (accessCode) {
-        // the proxy only uses the system api key after checking the access code
+      } else if (accessCode && !isApp) {
+        // only send the access code to our own /api/proxy, which checks it
+        // before using the system api key; never to the plugin server itself
         headers[headerName] = `Bearer ${ACCESS_CODE_PREFIX}${accessCode}`;
       }
     }

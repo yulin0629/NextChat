@@ -4,19 +4,24 @@ import {
   ACCESS_CODE_PREFIX,
   ModelProvider,
   OPENAI_BASE_URL,
+  OpenaiPath,
 } from "@/app/constant";
 import { auth } from "./auth";
 
 // The system api key may only be sent to the configured upstream (BASE_URL,
 // or api.openai.com when BASE_URL is unset). Compare parsed protocol, hostname
 // and port exactly; never use substring checks on client-supplied urls.
-export function isServerUpstream(target: string | null, baseUrl?: string) {
+function normalizeUpstream(baseUrl?: string) {
   let upstream = baseUrl || OPENAI_BASE_URL;
   if (!upstream.startsWith("http")) {
     upstream = `https://${upstream}`;
   }
+  return upstream.replace(/\/+$/, "");
+}
+
+export function isServerUpstream(target: string | null, baseUrl?: string) {
   try {
-    const expected = new URL(upstream);
+    const expected = new URL(normalizeUpstream(baseUrl));
     const actual = new URL(target ?? "");
     return (
       !actual.username &&
@@ -24,6 +29,40 @@ export function isServerUpstream(target: string | null, baseUrl?: string) {
       actual.protocol === expected.protocol &&
       actual.hostname === expected.hostname &&
       actual.port === expected.port
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Same paths as the /api/openai ALLOWED_PATH list, each with the only method
+// it needs. Any other path or method on the upstream host gets no system key.
+const SERVER_KEY_METHODS: Record<keyof typeof OpenaiPath, string> = {
+  ChatPath: "POST",
+  SpeechPath: "POST",
+  ImagePath: "POST",
+  UsagePath: "GET",
+  SubsPath: "GET",
+  ListModelPath: "GET",
+};
+
+// Only send the system api key when the request goes to the configured
+// upstream AND the WHATWG-normalized path (dot segments, %2e, etc. resolved,
+// exactly as fetch() resolves them) is an allowed OpenAI path built the same
+// way as app/api/common.ts builds it (`${BASE_URL}/${path}`).
+export function canUseServerKey(
+  target: string | null,
+  method: string,
+  baseUrl?: string,
+) {
+  if (!isServerUpstream(target, baseUrl)) return false;
+  try {
+    const pathname = new URL(target ?? "").pathname;
+    const upstream = normalizeUpstream(baseUrl);
+    return (Object.keys(OpenaiPath) as (keyof typeof OpenaiPath)[]).some(
+      (name) =>
+        new URL(`${upstream}/${OpenaiPath[name]}`).pathname === pathname &&
+        SERVER_KEY_METHODS[name] === method.toUpperCase(),
     );
   } catch {
     return false;
@@ -50,8 +89,8 @@ export async function handle(
     "x-base-url",
   )}/${subpath}?${req.nextUrl.searchParams.toString()}`;
 
-  // if dalle3 use the system api key, but only for the configured upstream
-  if (isServerUpstream(fetchUrl, serverConfig.baseUrl)) {
+  // if dalle3 use the system api key, but only for allowed upstream paths
+  if (canUseServerKey(fetchUrl, req.method, serverConfig.baseUrl)) {
     const authResult = auth(req, ModelProvider.GPT);
     if (authResult.error) {
       return NextResponse.json(authResult, { status: 401 });
@@ -59,8 +98,8 @@ export async function handle(
   } else if (
     req.headers
       .get("Authorization")
-      ?.replace("Bearer ", "")
-      .trim()
+      ?.trim()
+      .replace(/^bearer\s+/i, "")
       .startsWith(ACCESS_CODE_PREFIX)
   ) {
     // do not forward the access code to third-party hosts

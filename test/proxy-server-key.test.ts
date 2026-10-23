@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 import { NextRequest } from "next/server";
-import { handle, isServerUpstream } from "../app/api/proxy";
+import { canUseServerKey, handle, isServerUpstream } from "../app/api/proxy";
 
 const BYPASSES = [
   "https://api.openai.com.evil.com",
@@ -152,5 +152,216 @@ describe("proxy handle only sends the system key to BASE_URL", () => {
     await call("https://evil.com", `Bearer nk-${CODE}`);
     expect(calls).toHaveLength(1);
     expect(calls[0].auth).toBeNull();
+  });
+});
+
+describe("canUseServerKey only allows OpenAI paths and methods", () => {
+  const base = "https://sub2api.example.com";
+
+  test.each([
+    [`${base}/v1/images/generations?`, "POST", base],
+    [`${base}/v1/images/generations`, "post", base],
+    [`${base}/v1/chat/completions`, "POST", base],
+    [`${base}/v1/audio/speech`, "POST", base],
+    [`${base}/v1/models`, "GET", base],
+    [`${base}/dashboard/billing/usage?start_date=x`, "GET", base],
+    [`${base}/dashboard/billing/subscription`, "GET", base],
+    [`${base}/v1/images/generations`, "POST", `${base}/`],
+    [`${base}/v1/images/generations`, "POST", "sub2api.example.com"],
+    [`${base}/v1/live/../images/generations`, "POST", base],
+    [`${base}/proxy/v1/images/generations`, "POST", `${base}/proxy`],
+    ["https://api.openai.com/v1/images/generations", "POST", undefined],
+  ])("accepts %p %p (BASE_URL=%p)", (target, method, baseUrl) => {
+    expect(canUseServerKey(target, method, baseUrl)).toBe(true);
+  });
+
+  test.each([
+    [`${base}`, "POST"],
+    [`${base}/`, "POST"],
+    [`${base}/ops`, "POST"],
+    [`${base}/ops/x`, "GET"],
+    [`${base}/v1/live`, "POST"],
+    [`${base}/v1/live/ws`, "GET"],
+    [`${base}/v1/images/../../ops`, "POST"],
+    [`${base}/v1/images/%2e%2e/%2e%2e/ops`, "POST"],
+    [`${base}/v1/images/%2E%2E/%2e%2E/ops`, "POST"],
+    [`${base}/v1/images/.%2e/.%2E/ops`, "POST"],
+    [`${base}/v1/images/generations/../../live`, "POST"],
+    [`${base}/v1/images%2Fgenerations`, "POST"],
+    [`${base}/v1/images%2fgenerations`, "POST"],
+    [`${base}/v1/images/generations%2F..%2F..%2Fops`, "POST"],
+    [`${base}/v1/%69mages/generations`, "POST"],
+    [`${base}/v1/images/generations%00`, "POST"],
+    [`${base}//v1/images/generations`, "POST"],
+    [`${base}/v1//images/generations`, "POST"],
+    [`${base}/v1/images/generations/`, "POST"],
+    [`${base}/v1/images/generations/x`, "POST"],
+    [`${base}/V1/images/generations`, "POST"],
+    [`${base}/v1/images/generations;x`, "POST"],
+    [`${base}/v1/images/generations`, "GET"],
+    [`${base}/v1/images/generations`, "PUT"],
+    [`${base}/v1/chat/completions`, "DELETE"],
+    [`${base}/v1/models`, "POST"],
+    [`${base}/v1/models/x`, "GET"],
+    [`${base}/dashboard/billing/usage`, "POST"],
+    [`${base}/v1/images/generations`, "HEAD"],
+    ["https://evil.com/v1/images/generations", "POST"],
+  ])("rejects %p %p", (target, method) => {
+    expect(canUseServerKey(target, method, base)).toBe(false);
+  });
+
+  test("rejects paths outside the BASE_URL path prefix", () => {
+    expect(
+      canUseServerKey(`${base}/v1/images/generations`, "POST", `${base}/proxy`),
+    ).toBe(false);
+    expect(
+      canUseServerKey(
+        `${base}/proxy/../v1/images/generations`,
+        "POST",
+        `${base}/proxy`,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("proxy handle path and method allowlist", () => {
+  const KEY = "sk-test-canary-path";
+  let calls: { url: string; auth: string | null }[] = [];
+
+  beforeEach(() => {
+    calls = [];
+    process.env.OPENAI_API_KEY = KEY;
+    process.env.BASE_URL = "https://sub2api.example.com";
+    delete process.env.CODE;
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      calls.push({
+        url: String(url),
+        auth: new Headers(init?.headers).get("Authorization"),
+      });
+      return new Response("ok");
+    }) as any;
+  });
+
+  afterAll(() => {
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.BASE_URL;
+  });
+
+  async function call(
+    baseUrl: string,
+    path: string[],
+    method = "POST",
+    auth?: string,
+  ) {
+    const headers: Record<string, string> = { "x-base-url": baseUrl };
+    if (auth) headers["Authorization"] = auth;
+    const req = new NextRequest(
+      "https://chat.example.com/api/proxy/" + path.join("/"),
+      {
+        method,
+        headers,
+        body: method === "GET" || method === "HEAD" ? undefined : "{}",
+      },
+    );
+    return handle(req, { params: { path } });
+  }
+
+  test.each([
+    ["https://sub2api.example.com", ["v1", "images", "generations"], "POST"],
+    ["https://sub2api.example.com/v1", ["images", "generations"], "POST"],
+    ["https://sub2api.example.com", ["v1", "models"], "GET"],
+  ])("injects the key for %p %p %p", async (baseUrl, path, method) => {
+    await call(baseUrl, path, method);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].auth).toBe(`Bearer ${KEY}`);
+    expect(new URL(calls[0].url).host).toBe("sub2api.example.com");
+  });
+
+  test.each([
+    ["https://sub2api.example.com", ["ops"], "POST"],
+    ["https://sub2api.example.com", ["ops", "api", "x"], "GET"],
+    ["https://sub2api.example.com/ops", ["x"], "POST"],
+    ["https://sub2api.example.com", ["v1", "live"], "POST"],
+    ["https://sub2api.example.com", ["v1", "live", "ws"], "GET"],
+    [
+      "https://sub2api.example.com",
+      ["v1", "images", "..", "..", "ops"],
+      "POST",
+    ],
+    [
+      "https://sub2api.example.com",
+      ["v1", "images", "%2e%2e", "%2E%2E", "ops"],
+      "POST",
+    ],
+    [
+      "https://sub2api.example.com",
+      ["v1", "images", ".%2e", "%2e.", "ops"],
+      "POST",
+    ],
+    [
+      "https://sub2api.example.com/v1/images/generations/../../..",
+      ["ops"],
+      "POST",
+    ],
+    ["https://sub2api.example.com", ["v1", "images%2F..%2F..%2Fops"], "POST"],
+    [
+      "https://sub2api.example.com",
+      ["v1", "", "images", "generations"],
+      "POST",
+    ],
+    [
+      "https://sub2api.example.com",
+      ["", "v1", "images", "generations"],
+      "POST",
+    ],
+    ["https://sub2api.example.com", ["v1", "%69mages", "generations"], "POST"],
+    ["https://sub2api.example.com", ["v1", "images", "generations"], "GET"],
+    ["https://sub2api.example.com", ["v1", "images", "generations"], "PUT"],
+    ["https://sub2api.example.com", ["v1", "images", "generations"], "DELETE"],
+    ["https://sub2api.example.com", ["v1", "models"], "POST"],
+  ])("does not inject the key for %p %p %p", async (baseUrl, path, method) => {
+    await call(baseUrl, path, method).catch(() => undefined);
+    for (const c of calls) {
+      expect(c.auth ?? "").not.toContain(KEY);
+    }
+  });
+
+  test.each([
+    "Bearer nk-secret",
+    "bearer nk-secret",
+    "BEARER nk-secret",
+    "Bearer   nk-secret",
+    "bearer\tnk-secret",
+    "  Bearer nk-secret  ",
+  ])("strips the access code %p for other hosts", async (auth) => {
+    await call(
+      "https://evil.com",
+      ["v1", "images", "generations"],
+      "POST",
+      auth,
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].auth).toBeNull();
+  });
+
+  test("strips the access code for non-allowed paths on BASE_URL", async () => {
+    await call(
+      "https://sub2api.example.com",
+      ["ops"],
+      "POST",
+      "bearer  nk-secret",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].auth).toBeNull();
+  });
+
+  test("keeps a user api key for other hosts", async () => {
+    await call(
+      "https://evil.com",
+      ["v1", "images", "generations"],
+      "POST",
+      "Bearer sk-user",
+    );
+    expect(calls[0].auth).toBe("Bearer sk-user");
   });
 });
