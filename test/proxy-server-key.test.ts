@@ -278,6 +278,31 @@ describe("proxy handle path and method allowlist", () => {
   });
 
   test.each([
+    "https://user@sub2api.example.com",
+    "https://:pass@sub2api.example.com",
+    "https://sub2api.example.com\\@evil.com/..",
+    "https://sub2api.example.com\\@evil.com/%2e%2e",
+    "https://sub2api.example.com/v1/images/generations?x=",
+    "https://sub2api.example.com/v1/images/generations#",
+  ])("no key for unsafe base url %p on an allowed path", async (baseUrl) => {
+    await call(baseUrl, ["v1", "images", "generations"]);
+    for (const c of calls) expect(c.auth ?? "").not.toContain(KEY);
+  });
+
+  test("fetches the normalized href it checked", async () => {
+    await call("https://sub2api.example.com/x/..", ["v1", "models"], "GET");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://sub2api.example.com/v1/models?");
+    expect(calls[0].auth).toBe(`Bearer ${KEY}`);
+  });
+
+  test("rejects an unparsable base url", async () => {
+    const res = await call("not a url", ["v1", "models"], "GET");
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  test.each([
     ["https://sub2api.example.com", ["ops"], "POST"],
     ["https://sub2api.example.com", ["ops", "api", "x"], "GET"],
     ["https://sub2api.example.com/ops", ["x"], "POST"],

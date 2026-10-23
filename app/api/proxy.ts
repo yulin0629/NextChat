@@ -47,9 +47,11 @@ const SERVER_KEY_METHODS: Record<keyof typeof OpenaiPath, string> = {
 };
 
 // Only send the system api key when the request goes to the configured
-// upstream AND the WHATWG-normalized path (dot segments, %2e, etc. resolved,
-// exactly as fetch() resolves them) is an allowed OpenAI path built the same
-// way as app/api/common.ts builds it (`${BASE_URL}/${path}`).
+// upstream AND the WHATWG-normalized path (dot segments, %2e, etc. resolved)
+// is an allowed OpenAI path built the same way as app/api/common.ts builds it
+// (`${BASE_URL}/${path}`). handle() must fetch the same normalized href it
+// checked: workerd fetch() before compat date 2024-06-03 parses some raw urls
+// (e.g. "https://host\@evil.com/..") differently from new URL().
 export function canUseServerKey(
   target: string | null,
   method: string,
@@ -85,12 +87,27 @@ export async function handle(
   req.nextUrl.searchParams.delete("provider");
 
   const subpath = params.path.join("/");
-  const fetchUrl = `${req.headers.get(
-    "x-base-url",
-  )}/${subpath}?${req.nextUrl.searchParams.toString()}`;
+  const baseUrl = req.headers.get("x-base-url") ?? "";
+  let fetchUrl: string;
+  try {
+    fetchUrl = new URL(
+      `${baseUrl}/${subpath}?${req.nextUrl.searchParams.toString()}`,
+    ).href;
+  } catch {
+    return NextResponse.json(
+      { error: true, msg: "invalid x-base-url" },
+      { status: 400 },
+    );
+  }
+  // A base url carrying "?" or "#" would swallow the subpath, and "\\" or
+  // control characters parse differently across runtimes: no system key then.
+  const plainBaseUrl = !/[?#\\\u0000-\u0020\u007f]/.test(baseUrl);
 
-  // if dalle3 use the system api key, but only for allowed upstream paths
-  if (canUseServerKey(fetchUrl, req.method, serverConfig.baseUrl)) {
+  // use the system api key (e.g. the dalle3 plugin), only for allowed upstream paths
+  if (
+    plainBaseUrl &&
+    canUseServerKey(fetchUrl, req.method, serverConfig.baseUrl)
+  ) {
     const authResult = auth(req, ModelProvider.GPT);
     if (authResult.error) {
       return NextResponse.json(authResult, { status: 401 });

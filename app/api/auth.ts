@@ -15,7 +15,10 @@ function getIP(req: NextRequest) {
 }
 
 function parseApiKey(bearToken: string) {
-  const token = bearToken.trim().replaceAll("Bearer ", "").trim();
+  const token = bearToken
+    .trim()
+    .replace(/^bearer\s+/i, "")
+    .trim();
   const isApiKey = !token.startsWith(ACCESS_CODE_PREFIX);
 
   return {
