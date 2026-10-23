@@ -1,5 +1,5 @@
 import OpenAPIClientAxios from "openapi-client-axios";
-import { StoreKey } from "../constant";
+import { ACCESS_CODE_PREFIX, StoreKey } from "../constant";
 import { nanoid } from "nanoid";
 import { createPersistStore } from "../utils/store";
 import { getClientConfig } from "../config/client";
@@ -63,9 +63,12 @@ export const FunctionToolService = {
     }
     // try using openaiApiKey for Dalle3 Plugin.
     if (!tokenValue && plugin.id === "dalle3") {
-      const openaiApiKey = useAccessStore.getState().openaiApiKey;
+      const { openaiApiKey, accessCode } = useAccessStore.getState();
       if (openaiApiKey) {
         headers[headerName] = `Bearer ${openaiApiKey}`;
+      } else if (accessCode) {
+        // the proxy only uses the system api key after checking the access code
+        headers[headerName] = `Bearer ${ACCESS_CODE_PREFIX}${accessCode}`;
       }
     }
     const api = new OpenAPIClientAxios({

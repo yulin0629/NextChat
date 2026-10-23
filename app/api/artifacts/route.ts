@@ -51,6 +51,13 @@ async function handle(req: NextRequest, res: NextResponse) {
   }
   if (req.method === "GET") {
     const id = req?.nextUrl?.searchParams?.get("id");
+    // ids are md5 hashes; reject anything else so the token stays on the KV api
+    if (!id || !/^[0-9a-f]{32}$/.test(id)) {
+      return NextResponse.json(
+        { error: true, msg: "Invalid id" },
+        { status: 400 },
+      );
+    }
     const res = await fetch(`${storeUrl()}/values/${id}`, {
       headers: storeHeaders(),
       method: "GET",

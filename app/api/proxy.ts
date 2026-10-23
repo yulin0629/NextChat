@@ -1,5 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSideConfig } from "@/app/config/server";
+import {
+  ACCESS_CODE_PREFIX,
+  ModelProvider,
+  OPENAI_BASE_URL,
+} from "@/app/constant";
+import { auth } from "./auth";
+
+// The system api key may only be sent to the configured upstream (BASE_URL,
+// or api.openai.com when BASE_URL is unset). Compare parsed protocol, hostname
+// and port exactly; never use substring checks on client-supplied urls.
+export function isServerUpstream(target: string | null, baseUrl?: string) {
+  let upstream = baseUrl || OPENAI_BASE_URL;
+  if (!upstream.startsWith("http")) {
+    upstream = `https://${upstream}`;
+  }
+  try {
+    const expected = new URL(upstream);
+    const actual = new URL(target ?? "");
+    return (
+      !actual.username &&
+      !actual.password &&
+      actual.protocol === expected.protocol &&
+      actual.hostname === expected.hostname &&
+      actual.port === expected.port
+    );
+  } catch {
+    return false;
+  }
+}
 
 export async function handle(
   req: NextRequest,
@@ -20,6 +49,23 @@ export async function handle(
   const fetchUrl = `${req.headers.get(
     "x-base-url",
   )}/${subpath}?${req.nextUrl.searchParams.toString()}`;
+
+  // if dalle3 use the system api key, but only for the configured upstream
+  if (isServerUpstream(fetchUrl, serverConfig.baseUrl)) {
+    const authResult = auth(req, ModelProvider.GPT);
+    if (authResult.error) {
+      return NextResponse.json(authResult, { status: 401 });
+    }
+  } else if (
+    req.headers
+      .get("Authorization")
+      ?.replace("Bearer ", "")
+      .trim()
+      .startsWith(ACCESS_CODE_PREFIX)
+  ) {
+    // do not forward the access code to third-party hosts
+    req.headers.delete("Authorization");
+  }
   const skipHeaders = ["connection", "host", "origin", "referer", "cookie"];
   const headers = new Headers(
     Array.from(req.headers.entries()).filter((item) => {
@@ -33,18 +79,6 @@ export async function handle(
       return true;
     }),
   );
-  // if dalle3 use openai api key
-    const baseUrl = req.headers.get("x-base-url");
-    if (baseUrl?.includes("api.openai.com")) {
-      if (!serverConfig.apiKey) {
-        return NextResponse.json(
-          { error: "OpenAI API key not configured" },
-          { status: 500 },
-        );
-      }
-      headers.set("Authorization", `Bearer ${serverConfig.apiKey}`);
-    }
-
   const controller = new AbortController();
   const fetchOptions: RequestInit = {
     headers,
