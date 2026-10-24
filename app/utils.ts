@@ -303,6 +303,7 @@ export function getTimeoutMSByModel(model?: string) {
   if (
     m.startsWith("dall-e") ||
     m.startsWith("dalle") ||
+    m.startsWith("gpt-image") ||
     m.startsWith("o1") ||
     m.startsWith("o3") ||
     m.includes("deepseek-r") ||

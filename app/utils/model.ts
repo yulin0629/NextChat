@@ -219,6 +219,17 @@ export function isGPT4Model(modelName: string): boolean {
 }
 
 /**
+ * gpt-image-* takes low|medium|high|auto, not dall-e-3's standard|hd.
+ * "standard" (NextChat's default) is dropped so the upstream picks auto; "hd" becomes "high".
+ *
+ * @param quality The dall-e-3 style quality chosen in the settings
+ * @returns The quality to send to a gpt-image model, or undefined to omit it
+ */
+export function gptImageQuality(quality?: string): "high" | undefined {
+  return quality === "hd" ? "high" : undefined;
+}
+
+/**
  * Checks if a model is not available on any of the specified providers in the server.
  *
  * @param {string} customModels - A string of custom models, comma-separated.
