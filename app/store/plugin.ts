@@ -6,6 +6,10 @@ import { getClientConfig } from "../config/client";
 import yaml from "js-yaml";
 import { adapter, getOperationId } from "../utils";
 import { useAccessStore } from "./access";
+import {
+  WEB_SEARCH_PLUGIN_ID,
+  WEB_SEARCH_SPEC,
+} from "../utils/web-search-tool";
 
 const isApp = getClientConfig()?.isApp !== false;
 
@@ -54,9 +58,11 @@ export const FunctionToolService = {
     const authLocation = plugin?.authLocation || "header";
     const definition = yaml.load(plugin.content) as any;
     const serverURL = definition?.servers?.[0]?.url;
-    const baseURL = !isApp ? "/api/proxy" : serverURL;
+    // "/api"-style urls are this app's own routes: call them directly, not via /api/proxy
+    const viaProxy = !isApp && !/^\/(?!\/)/.test(serverURL ?? "");
+    const baseURL = viaProxy ? "/api/proxy" : serverURL;
     const headers: Record<string, string | undefined> = {
-      "X-Base-URL": !isApp ? serverURL : undefined,
+      "X-Base-URL": viaProxy ? serverURL : undefined,
     };
     if (authLocation == "header") {
       headers[headerName] = tokenValue;
@@ -273,3 +279,29 @@ export const usePluginStore = createPersistStore(
     },
   },
 );
+
+// Created or refreshed once the persisted store is loaded, so it needs no network.
+function ensureWebSearchPlugin() {
+  const store = usePluginStore.getState();
+  const content = JSON.stringify(WEB_SEARCH_SPEC);
+  if (!store.get(WEB_SEARCH_PLUGIN_ID)) {
+    store.create({ id: WEB_SEARCH_PLUGIN_ID });
+  }
+  const plugin = store.get(WEB_SEARCH_PLUGIN_ID);
+  if (plugin?.content === content && plugin.builtin) return;
+  store.updatePlugin(WEB_SEARCH_PLUGIN_ID, (p) => {
+    p.title = WEB_SEARCH_SPEC.info.title;
+    p.version = WEB_SEARCH_SPEC.info.version;
+    p.content = content;
+    p.builtin = true;
+  });
+}
+
+if (typeof window !== "undefined") {
+  const { persist } = usePluginStore;
+  if (persist.hasHydrated()) {
+    ensureWebSearchPlugin();
+  } else {
+    persist.onFinishHydration(ensureWebSearchPlugin);
+  }
+}

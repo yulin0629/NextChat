@@ -353,6 +353,11 @@ export function showPlugins(provider: ServiceProvider, model: string) {
   if (provider == ServiceProvider.Google && !model.includes("vision")) {
     return true;
   }
+  // A CUSTOM_MODELS entry without "@Provider" gets a provider named after the
+  // model; it runs on the OpenAI-compatible client, which sends tools.
+  if (!(Object.values(ServiceProvider) as string[]).includes(provider)) {
+    return true;
+  }
   return false;
 }
 

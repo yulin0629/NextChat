@@ -3,6 +3,7 @@ import { getLang, Lang } from "../locales";
 import { DEFAULT_TOPIC, ChatMessage } from "./chat";
 import { ModelConfig, useAppConfig } from "./config";
 import { StoreKey } from "../constant";
+import { WEB_SEARCH_PLUGIN_ID } from "../utils/web-search-tool";
 import { nanoid } from "nanoid";
 import { createPersistStore } from "../utils/store";
 
@@ -43,7 +44,7 @@ export const createEmptyMask = () =>
     lang: getLang(),
     builtin: false,
     createdAt: Date.now(),
-    plugin: [],
+    plugin: [WEB_SEARCH_PLUGIN_ID],
   }) as Mask;
 
 export const useMaskStore = createPersistStore(
