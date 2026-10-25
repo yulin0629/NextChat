@@ -1,5 +1,7 @@
 // Built-in Web Search tool: the OpenAPI spec the model sees. app/store/plugin.ts
 // registers it; app/api/search serves it. On by default in new chats (app/store/mask.ts).
+// The tool is not named "web_search": the gateway (Sub2API) treats that name as a
+// native search tool on some upstreams and counts its calls as such.
 export const WEB_SEARCH_PLUGIN_ID = "websearch";
 
 export const WEB_SEARCH_SPEC = {
@@ -9,7 +11,7 @@ export const WEB_SEARCH_SPEC = {
   paths: {
     "/search": {
       post: {
-        operationId: "web_search",
+        operationId: "search_web",
         summary: "Search the web",
         description:
           "Search the web and get page titles, URLs and text excerpts. Use it for recent events, current facts, and anything you are not sure about or that may have changed since your training data.",
