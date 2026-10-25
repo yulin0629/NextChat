@@ -335,6 +335,12 @@ Change default model
 
 Add additional models to have vision capabilities, beyond the default pattern matching. Multiple models should be separated by commas.
 
+### `EXA_API_KEY` (optional)
+
+> Default: Empty
+
+Turns on the built-in Web Search tool. The server calls [Exa](https://exa.ai) with this key (one `lite` search per call, about 0.004 USD) and returns titles, URLs and short excerpts to the model. Without it, `/api/search` answers 503. New chats start with the tool on; switch it off in the chat toolbar's plugin button.
+
 ### `WHITE_WEBDAV_ENDPOINTS` (optional)
 
 You can use this option if you want to increase the number of webdav service addresses you are allowed to access, as required by the format：
