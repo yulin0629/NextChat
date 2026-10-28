@@ -560,7 +560,7 @@ export const useChatStore = createPersistStore(
         // in-context prompts
         const contextPrompts = session.mask.context.slice();
 
-        // system prompts: current model and time, for every model
+        // system prompts: current model and date, for every model
         const shouldInjectSystemPrompts = modelConfig.enableInjectSystemPrompts;
 
         const mcpEnabled = await isMcpEnabled();

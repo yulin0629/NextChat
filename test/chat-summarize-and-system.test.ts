@@ -67,7 +67,8 @@ describe("system prompt", () => {
   }
 
   test("every model gets its name and today's date, not a ChatGPT persona", async () => {
-    jest.useFakeTimers().setSystemTime(new Date("2026-10-28T03:04:05Z"));
+    // local noon, so the local date is 2026-10-28 in any time zone
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 28, 12, 4, 5));
     sessionWith("claude-sonnet-5-5");
     const system = await systemPrompt();
     expect(system).toContain("Current model: claude-sonnet-5-5");
@@ -78,9 +79,9 @@ describe("system prompt", () => {
 
   test("stays identical within a day, so the prompt cache keeps hitting", async () => {
     sessionWith("gemini-4-argon");
-    jest.useFakeTimers().setSystemTime(new Date("2026-10-28T03:00:00Z"));
+    jest.useFakeTimers().setSystemTime(new Date(2026, 9, 28, 9, 0, 0));
     const first = await systemPrompt();
-    jest.setSystemTime(new Date("2026-10-28T03:47:31Z"));
+    jest.setSystemTime(new Date(2026, 9, 28, 21, 47, 31));
     expect(await systemPrompt()).toBe(first);
   });
 });
