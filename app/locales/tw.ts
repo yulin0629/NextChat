@@ -181,7 +181,7 @@ const tw = {
     },
     InjectSystemPrompts: {
       Title: "匯入系統提示",
-      SubTitle: "在每個請求的訊息列表開頭加上目前模型與時間的系統提示",
+      SubTitle: "在每個請求的訊息列表開頭加上目前模型與日期的系統提示",
     },
     InputTemplate: {
       Title: "使用者輸入預處理",

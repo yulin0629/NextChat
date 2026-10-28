@@ -59,13 +59,28 @@ describe("title and memory summary model", () => {
 });
 
 describe("system prompt", () => {
-  test("every model gets its name and the current time, not a ChatGPT persona", async () => {
-    sessionWith("claude-sonnet-5-5");
+  afterEach(() => jest.useRealTimers());
+
+  async function systemPrompt() {
     const messages = await useChatStore.getState().getMessagesWithMemory();
-    const system = messages.find((m) => m.role === "system")?.content as string;
+    return messages.find((m) => m.role === "system")?.content as string;
+  }
+
+  test("every model gets its name and today's date, not a ChatGPT persona", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-10-28T03:04:05Z"));
+    sessionWith("claude-sonnet-5-5");
+    const system = await systemPrompt();
     expect(system).toContain("Current model: claude-sonnet-5-5");
-    expect(system).toMatch(/Current time: .*\d{4}/);
+    expect(system).toMatch(/Current date: 2026-10-28 \(.+\)/);
     expect(system).not.toContain("ChatGPT");
     expect(system).not.toContain("Knowledge cutoff");
+  });
+
+  test("stays identical within a day, so the prompt cache keeps hitting", async () => {
+    sessionWith("gemini-4-argon");
+    jest.useFakeTimers().setSystemTime(new Date("2026-10-28T03:00:00Z"));
+    const first = await systemPrompt();
+    jest.setSystemTime(new Date("2026-10-28T03:47:31Z"));
+    expect(await systemPrompt()).toBe(first);
   });
 });

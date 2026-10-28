@@ -121,10 +121,11 @@ function createEmptySession(): ChatSession {
 // Subscription-backed on this deployment, so titles and memory summaries cost no cash.
 const PREFERRED_SUMMARIZE_MODEL = "gpt-6-luna";
 
-// Every model gets the current time; most have no other way to know today's date.
+// Every model gets today's date; most have no other way to know it. Date only, so
+// the prompt stays the same all day and the upstream prompt cache keeps hitting.
 const SYSTEM_TEMPLATE = `
 Current model: {{model}}
-Current time: {{time}}
+Current date: {{date}}
 `;
 
 function getSummarizeModel(
@@ -184,6 +185,9 @@ function fillTemplateWith(input: string, modelConfig: ModelConfig) {
     cutoff,
     model: modelConfig.model,
     time: new Date().toString(),
+    date: `${new Date().toLocaleDateString("en-CA")} (${
+      Intl.DateTimeFormat().resolvedOptions().timeZone
+    })`,
     lang: getLang(),
     input: input,
   };
