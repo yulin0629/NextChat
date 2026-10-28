@@ -104,6 +104,74 @@ describe("when the summarize model fails", () => {
     ]);
   });
 
+  test("the retry's summary becomes the memory", () => {
+    run("claude-sonnet-5-5", true);
+    const session = useChatStore.getState().currentSession();
+    expect(session.memoryPrompt).toBe("A Fine Title");
+    expect(session.lastSummarizeIndex).toBe(1);
+  });
+
+  // a stream that fails part-way can still report later: onUpdate from its animation,
+  // onFinish with status 200 when it is aborted
+  function summarizeWith(firstAttempt: (options: any) => void, retry: (options: any) => void) {
+    useAccessStore.setState({ customModels: "-all,+gpt-6-luna=GPT-6 Luna,+claude-sonnet-5-5" });
+    chat.mockReset();
+    chat.mockImplementation((options: any) => {
+      if (!options.config.stream) return options.onFinish("A Fine Title", { status: 200 });
+      (options.config.model === "gpt-6-luna" ? firstAttempt : retry)(options);
+    });
+    const session = sessionWith("claude-sonnet-5-5");
+    useChatStore.getState().updateTargetSession(session, (s) => {
+      s.messages = [createMessage({ role: "user", content: LONGER })];
+      s.memoryPrompt = "GOOD OLD MEMORY";
+    });
+    useChatStore.getState().summarizeSession(false, useChatStore.getState().currentSession());
+    return chat.mock.calls.filter((c) => c[0].config.stream).map((c) => c[0]);
+  }
+
+  test("a failed stream that reports late does not overwrite the retry's memory", () => {
+    const [first] = summarizeWith(
+      (o) => {
+        o.onUpdate?.("PARTIAL FROM LUNA");
+        o.onError(new Error("connection reset"));
+      },
+      (o) => o.onFinish("FULL SUMMARY", { status: 200 }),
+    );
+    first.onUpdate?.("PARTIAL FROM LUNA, MORE");
+    first.onFinish("PARTIAL FROM LUNA, MORE", { status: 200 });
+    expect(useChatStore.getState().currentSession().memoryPrompt).toBe("FULL SUMMARY");
+  });
+
+  test("the old memory stays when every attempt fails part-way or comes back empty", () => {
+    const halfThenError = (o: any) => {
+      o.onUpdate?.("HALF");
+      o.onError(new Error("connection reset"));
+    };
+    summarizeWith(halfThenError, halfThenError);
+    let session = useChatStore.getState().currentSession();
+    expect(session.memoryPrompt).toBe("GOOD OLD MEMORY");
+    expect(session.lastSummarizeIndex).toBe(0);
+
+    const calls = summarizeWith(
+      (o) => o.onFinish("", { status: 200 }),
+      (o) => o.onFinish("", { status: 200 }),
+    );
+    expect(calls).toHaveLength(2);
+    session = useChatStore.getState().currentSession();
+    expect(session.memoryPrompt).toBe("GOOD OLD MEMORY");
+  });
+
+  test("the summary request has no system message after the conversation starts", () => {
+    const [first] = summarizeWith(
+      (o) => o.onFinish("FULL SUMMARY", { status: 200 }),
+      () => {},
+    );
+    const roles = first.messages.map((m: any) => m.role);
+    expect(roles[0]).toBe("system");
+    expect(roles.slice(1)).not.toContain("system");
+    expect(roles[roles.length - 1]).toBe("user");
+  });
+
   test("no retry when the summarize model works, and at most one when both fail", () => {
     expect(run("claude-sonnet-5-5", false, () => true)).toEqual([[false, "gpt-6-luna"]]);
     expect(run("claude-sonnet-5-5", false, () => false)).toHaveLength(2);

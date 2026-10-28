@@ -714,21 +714,27 @@ export const useChatStore = createPersistStore(
             api: ClientApi,
             model: string,
             providerName: string,
-            failed: () => void,
+            settle: (ok: boolean) => boolean,
           ) => void,
         ) => {
           let i = 0;
-          // a failure reported twice (onFinish and onError) just finds no attempt left
           const next = () => {
             const attempt = attempts[i++];
-            if (attempt) {
-              send(
-                getClientApi(attempt[1] as ServiceProvider),
-                attempt[0],
-                attempt[1],
-                next,
-              );
-            }
+            if (!attempt) return;
+            // Only an attempt's first outcome counts: a failed stream can still call
+            // onFinish later (on abort) and must not overwrite the retry's result.
+            let settled = false;
+            send(
+              getClientApi(attempt[1] as ServiceProvider),
+              attempt[0],
+              attempt[1],
+              (ok) => {
+                if (settled) return false;
+                settled = true;
+                if (!ok) next();
+                return ok;
+              },
+            );
           };
           next();
         };
@@ -759,7 +765,7 @@ export const useChatStore = createPersistStore(
                 content: Locale.Store.Prompt.Topic,
               }),
             );
-          withFallback((api, model, providerName, failed) =>
+          withFallback((api, model, providerName, settle) =>
             api.llm.chat({
               messages: topicMessages,
               config: {
@@ -768,7 +774,7 @@ export const useChatStore = createPersistStore(
                 providerName,
               },
               onFinish(message, responseRes) {
-                if (responseRes?.status === 200) {
+                if (settle(responseRes?.status === 200)) {
                   get().updateTargetSession(
                     session,
                     (session) =>
@@ -777,11 +783,9 @@ export const useChatStore = createPersistStore(
                           ? trimTopic(message)
                           : DEFAULT_TOPIC),
                   );
-                } else {
-                  failed();
                 }
               },
-              onError: failed,
+              onError: () => settle(false),
             }),
           );
         }
@@ -824,11 +828,13 @@ export const useChatStore = createPersistStore(
            * this param is just shit
            **/
           const { max_tokens, ...modelcfg } = modelConfig;
-          withFallback((api, model, providerName, failed) =>
+          withFallback((api, model, providerName, settle) =>
             api.llm.chat({
+              // the instruction is a user turn: Qwen-style templates reject a system
+              // message after the conversation has started
               messages: toBeSummarizedMsgs.concat(
                 createMessage({
-                  role: "system",
+                  role: "user",
                   content: Locale.Store.Prompt.Summarize,
                   date: "",
                 }),
@@ -839,23 +845,20 @@ export const useChatStore = createPersistStore(
                 model,
                 providerName,
               },
-              onUpdate(message) {
-                session.memoryPrompt = message;
-              },
+              // memoryPrompt changes only on success, so a failed or cut-off summary
+              // never replaces the memory the chat already has
               onFinish(message, responseRes) {
-                if (responseRes?.status === 200) {
+                if (settle(responseRes?.status === 200 && message.length > 0)) {
                   console.log("[Memory] ", message);
                   get().updateTargetSession(session, (session) => {
                     session.lastSummarizeIndex = lastSummarizeIndex;
                     session.memoryPrompt = message; // Update the memory prompt for stored it in local storage
                   });
-                } else {
-                  failed();
                 }
               },
               onError(err) {
                 console.error("[Summarize] ", err);
-                failed();
+                settle(false);
               },
             }),
           );
