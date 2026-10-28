@@ -88,6 +88,7 @@ export interface ChatOptions {
 export interface LLMUsage {
   used: number;
   total: number;
+  windows?: { window: string; used: number; limit: number }[];
 }
 
 export interface LLMModel {

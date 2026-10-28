@@ -219,7 +219,7 @@ DeepSeek Api Url.
 
 ### `ENABLE_BALANCE_QUERY` （可选）
 
-如果你想启用余额查询功能，将此环境变量设置为 1 即可。
+如果你想启用余额查询功能，将此环境变量设置为 1 即可。设置页读取网关（Sub2API）的 `GET /v1/usage`：该密钥的总额度及 5 小时／1 天／7 天限额，以牌价美元计。
 
 ### `DISABLE_FAST_LINK` （可选）
 

@@ -9,7 +9,7 @@ import { createPersistStore } from "../utils/store";
 import { clientUpdate } from "../utils";
 import ChatGptIcon from "../icons/chatgpt.png";
 import Locale from "../locales";
-import { ClientApi } from "../client/api";
+import { ClientApi, LLMUsage } from "../client/api";
 
 const ONE_MINUTE = 60 * 1000;
 const isApp = !!getClientConfig()?.isApp;
@@ -57,6 +57,7 @@ export const useUpdateStore = createPersistStore(
     remoteVersion: "",
     used: 0,
     subscription: 0,
+    usageWindows: [] as NonNullable<LLMUsage["windows"]>,
 
     lastUpdateUsage: 0,
   },
@@ -150,6 +151,7 @@ export const useUpdateStore = createPersistStore(
           set(() => ({
             used: usage.used,
             subscription: usage.total,
+            usageWindows: usage.windows ?? [],
           }));
         }
       } catch (e) {

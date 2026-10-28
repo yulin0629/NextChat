@@ -5,8 +5,12 @@ import { prettyObject } from "@/app/utils/format";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "./auth";
 import { requestOpenai } from "./common";
+import { SUB2API_USAGE_PATH } from "@/app/utils/sub2api-usage";
 
-const ALLOWED_PATH = new Set(Object.values(OpenaiPath));
+const ALLOWED_PATH = new Set<string>([
+  ...Object.values(OpenaiPath),
+  SUB2API_USAGE_PATH,
+]);
 
 function getModels(remoteModelRes: OpenAIListModelResponse) {
   const config = getServerSideConfig();

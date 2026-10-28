@@ -298,7 +298,7 @@ If you do not want users to use GPT-4, set this value to 1.
 
 > Default: Empty
 
-If you do want users to query balance, set this value to 1.
+If you do want users to query balance, set this value to 1. The settings page reads the gateway's `GET /v1/usage` (Sub2API): the key's total quota and its 5h / 1d / 7d limits, in USD at list price.
 
 ### `DISABLE_FAST_LINK` (optional)
 

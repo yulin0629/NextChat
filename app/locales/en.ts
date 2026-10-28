@@ -307,7 +307,7 @@ const en: LocaleType = {
     Usage: {
       Title: "Account Balance",
       SubTitle(used: any, total: any) {
-        return `Used this month $${used}, subscription $${total}`;
+        return `Used $${used} of $${total} quota`;
       },
       IsChecking: "Checking...",
       Check: "Check",
