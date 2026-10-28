@@ -685,7 +685,37 @@ export const useChatStore = createPersistStore(
               session.mask.modelConfig.model,
               session.mask.modelConfig.providerName,
             );
-        const api: ClientApi = getClientApi(providerName as ServiceProvider);
+        // The summarize model may be unreachable from this deployment; then the
+        // chat's own model gets one more try, so titles never end up worse than before.
+        const ownModel = session.mask.modelConfig.model;
+        const ownProvider = session.mask.modelConfig.providerName;
+        const attempts = [[model, providerName]];
+        if (!modelConfig.compressModel && model !== ownModel) {
+          attempts.push([ownModel, ownProvider]);
+        }
+        const withFallback = (
+          send: (
+            api: ClientApi,
+            model: string,
+            providerName: string,
+            failed: () => void,
+          ) => void,
+        ) => {
+          let i = 0;
+          // a failure reported twice (onFinish and onError) just finds no attempt left
+          const next = () => {
+            const attempt = attempts[i++];
+            if (attempt) {
+              send(
+                getClientApi(attempt[1] as ServiceProvider),
+                attempt[0],
+                attempt[1],
+                next,
+              );
+            }
+          };
+          next();
+        };
 
         // remove error messages if any
         const messages = session.messages;
@@ -713,24 +743,31 @@ export const useChatStore = createPersistStore(
                 content: Locale.Store.Prompt.Topic,
               }),
             );
-          api.llm.chat({
-            messages: topicMessages,
-            config: {
-              model,
-              stream: false,
-              providerName,
-            },
-            onFinish(message, responseRes) {
-              if (responseRes?.status === 200) {
-                get().updateTargetSession(
-                  session,
-                  (session) =>
-                    (session.topic =
-                      message.length > 0 ? trimTopic(message) : DEFAULT_TOPIC),
-                );
-              }
-            },
-          });
+          withFallback((api, model, providerName, failed) =>
+            api.llm.chat({
+              messages: topicMessages,
+              config: {
+                model,
+                stream: false,
+                providerName,
+              },
+              onFinish(message, responseRes) {
+                if (responseRes?.status === 200) {
+                  get().updateTargetSession(
+                    session,
+                    (session) =>
+                      (session.topic =
+                        message.length > 0
+                          ? trimTopic(message)
+                          : DEFAULT_TOPIC),
+                  );
+                } else {
+                  failed();
+                }
+              },
+              onError: failed,
+            }),
+          );
         }
         const summarizeIndex = Math.max(
           session.lastSummarizeIndex,
@@ -771,36 +808,41 @@ export const useChatStore = createPersistStore(
            * this param is just shit
            **/
           const { max_tokens, ...modelcfg } = modelConfig;
-          api.llm.chat({
-            messages: toBeSummarizedMsgs.concat(
-              createMessage({
-                role: "system",
-                content: Locale.Store.Prompt.Summarize,
-                date: "",
-              }),
-            ),
-            config: {
-              ...modelcfg,
-              stream: true,
-              model,
-              providerName,
-            },
-            onUpdate(message) {
-              session.memoryPrompt = message;
-            },
-            onFinish(message, responseRes) {
-              if (responseRes?.status === 200) {
-                console.log("[Memory] ", message);
-                get().updateTargetSession(session, (session) => {
-                  session.lastSummarizeIndex = lastSummarizeIndex;
-                  session.memoryPrompt = message; // Update the memory prompt for stored it in local storage
-                });
-              }
-            },
-            onError(err) {
-              console.error("[Summarize] ", err);
-            },
-          });
+          withFallback((api, model, providerName, failed) =>
+            api.llm.chat({
+              messages: toBeSummarizedMsgs.concat(
+                createMessage({
+                  role: "system",
+                  content: Locale.Store.Prompt.Summarize,
+                  date: "",
+                }),
+              ),
+              config: {
+                ...modelcfg,
+                stream: true,
+                model,
+                providerName,
+              },
+              onUpdate(message) {
+                session.memoryPrompt = message;
+              },
+              onFinish(message, responseRes) {
+                if (responseRes?.status === 200) {
+                  console.log("[Memory] ", message);
+                  get().updateTargetSession(session, (session) => {
+                    session.lastSummarizeIndex = lastSummarizeIndex;
+                    session.memoryPrompt = message; // Update the memory prompt for stored it in local storage
+                  });
+                } else {
+                  failed();
+                }
+              },
+              onError(err) {
+                console.error("[Summarize] ", err);
+                failed();
+              },
+            }),
+          );
         }
       },
 

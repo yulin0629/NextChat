@@ -58,6 +58,60 @@ describe("title and memory summary model", () => {
   });
 });
 
+describe("when the summarize model fails", () => {
+  const LONGER = "word ".repeat(900);
+
+  let alsoOnError = false;
+  function run(model: string, longChat = false, ok = (m: string) => m !== "gpt-6-luna") {
+    useAccessStore.setState({
+      customModels: "-all,+gpt-6-luna=GPT-6 Luna,+claude-sonnet-5-5",
+    });
+    chat.mockReset();
+    chat.mockImplementation((options: any) =>
+      ok(options.config.model)
+        ? options.onFinish("A Fine Title", { status: 200 })
+        : (options.onFinish("upstream error", { status: 502 }),
+          // some failures report through both callbacks
+          alsoOnError && options.onError?.(new Error("upstream error"))),
+    );
+    const session = sessionWith(model);
+    if (longChat) {
+      useChatStore.getState().updateTargetSession(session, (s) => {
+        s.messages = [createMessage({ role: "user", content: LONGER })];
+      });
+    }
+    useChatStore.getState().summarizeSession(false, useChatStore.getState().currentSession());
+    return chat.mock.calls.map((c) => [c[0].config.stream, c[0].config.model]);
+  }
+
+  afterEach(() => (alsoOnError = false));
+
+  test.each([false, true])("the title is retried once with the chat's own model (also onError: %s)", (both) => {
+    alsoOnError = both;
+    expect(run("claude-sonnet-5-5")).toEqual([
+      [false, "gpt-6-luna"],
+      [false, "claude-sonnet-5-5"],
+    ]);
+    expect(useChatStore.getState().currentSession().topic).toBe("A Fine Title");
+  });
+
+  test.each([false, true])("the memory summary is retried the same way (also onError: %s)", (both) => {
+    alsoOnError = both;
+    const calls = run("claude-sonnet-5-5", true).filter(([stream]) => stream);
+    expect(calls).toEqual([
+      [true, "gpt-6-luna"],
+      [true, "claude-sonnet-5-5"],
+    ]);
+  });
+
+  test("no retry when the summarize model works, and at most one when both fail", () => {
+    expect(run("claude-sonnet-5-5", false, () => true)).toEqual([[false, "gpt-6-luna"]]);
+    expect(run("claude-sonnet-5-5", false, () => false)).toHaveLength(2);
+    alsoOnError = true;
+    expect(run("claude-sonnet-5-5", false, () => false)).toHaveLength(2);
+  });
+});
+
 describe("system prompt", () => {
   afterEach(() => jest.useRealTimers());
 
