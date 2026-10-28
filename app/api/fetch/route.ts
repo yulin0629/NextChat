@@ -4,8 +4,9 @@ import { htmlToText } from "@/app/utils/html-to-text";
 export const runtime = "edge";
 
 const MAX_URL_CHARS = 2000;
-// keeps text extraction within a few ms of CPU on the edge
-const MAX_BODY_BYTES = 512 * 1024;
+// large enough for pages whose <title> comes late (YouTube: ~800 KB in); text
+// extraction is one linear pass, a few ms per MB
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_CHARS = 12000;
 const TIMEOUT_MS = 15 * 1000;
 
@@ -54,7 +55,7 @@ function pageDecoder(type: string, body: Uint8Array, isHtml: boolean) {
 
 async function readCapped(res: Response, type: string, isHtml: boolean) {
   const reader = res.body?.getReader();
-  if (!reader) return "";
+  if (!reader) return { body: "", capped: false };
   const chunks: Uint8Array[] = [];
   let size = 0;
   while (size < MAX_BODY_BYTES) {
@@ -72,7 +73,10 @@ async function readCapped(res: Response, type: string, isHtml: boolean) {
     offset += part.length;
     if (offset >= all.length) break;
   }
-  return pageDecoder(type, all, isHtml).decode(all);
+  return {
+    body: pageDecoder(type, all, isHtml).decode(all),
+    capped: size >= MAX_BODY_BYTES,
+  };
 }
 
 // Backs the Web Search tool's fetch_url: reads one public page straight from
@@ -109,14 +113,18 @@ export async function POST(req: NextRequest) {
       );
     }
     const type = res.headers.get("content-type") ?? "";
-    const isHtml = /html|xml/i.test(type);
+    // not /xml/ alone: Office files are "application/vnd.openxmlformats-…"
+    const isHtml =
+      /^\s*(text\/html|text\/xml|application\/(xhtml\+|[\w.-]+\+)?xml)\s*(;|$)/i.test(
+        type,
+      );
     if (!isHtml && !/^text\/|json/i.test(type)) {
       return NextResponse.json(
         { error: `unsupported content type: ${type || "unknown"}` },
         { status: 415 },
       );
     }
-    const body = await readCapped(res, type, isHtml);
+    const { body, capped } = await readCapped(res, type, isHtml);
     const { title, text } = isHtml
       ? htmlToText(body)
       : { title: "", text: body.trim() };
@@ -124,7 +132,7 @@ export async function POST(req: NextRequest) {
       url: res.url || target.toString(),
       title,
       text: text.slice(0, MAX_TEXT_CHARS),
-      truncated: text.length > MAX_TEXT_CHARS,
+      truncated: capped || text.length > MAX_TEXT_CHARS,
     });
   } catch (e) {
     console.error("[Fetch] request failed", e);

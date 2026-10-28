@@ -64,6 +64,26 @@ describe("POST /api/fetch", () => {
     expect(data.truncated).toBe(true);
   });
 
+  test("415 for an Office document, though its type mentions xml", async () => {
+    fetchMock.mockResolvedValue(
+      page(
+        "PK\u0003\u0004",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    );
+    const res = await POST(post({ url: "https://example.com/a.docx" }));
+    expect(res.status).toBe(415);
+  });
+
+  test("says truncated when the page was longer than what was read", async () => {
+    fetchMock.mockResolvedValue(
+      page("<p>short text</p><!--" + "x".repeat(3 * 1024 * 1024) + "-->"),
+    );
+    const data = await (await POST(post({ url: "https://example.com/big" }))).json();
+    expect(data.text).toBe("short text");
+    expect(data.truncated).toBe(true);
+  });
+
   test("415 for binary content such as a PDF", async () => {
     fetchMock.mockResolvedValue(page("%PDF-1.7", "application/pdf"));
     const res = await POST(post({ url: "https://example.com/a.pdf" }));
@@ -212,7 +232,14 @@ describe("htmlToText", () => {
   });
 
   test.each([
-    ["no </head>", "<head><title>T</title><body><p>body text</p>", "T body text"],
+    ["a script cut off by the byte cap", '<p>intro</p><script>var a = {"x":1, "y": [', "intro"],
+    ["a tag cut off by the byte cap", '<p>intro</p><img src="data:image/png;base64,iVBORw0KGgo', "intro"],
+    ["a comment cut off by the byte cap", "<p>intro</p><!-- tracking", "intro"],
+    ["> inside a quoted attribute", `<p data-mw='{"wt":"{{nbsp}} &lt;!--x-->"}'>Body</p><a title="x>y" href="/">link</a>`, "Body\nlink"],
+    ["a hidden textarea template", '<textarea style=display:none>&lt;div class="t"&gt;tpl&lt;/div&gt;</textarea><p>real</p>', "real"],
+    ["comparison signs in text", "<p>1 < 2 and 3 > 2</p>", "1 < 2 and 3 > 2"],
+    ["Windows line ends", "<p>one</p>\r\n  <p>two</p>", "one\ntwo"],
+    ["no </head>", "<head><title>T</title><body><p>body text</p>", "body text"],
     ["self-closing svg", '<p>before</p><svg width="0"/><p>after svg</p>', "before\nafter svg"],
     ["empty comment <!-->", "<p>one</p><!--><p>two</p><!-- c --><p>three</p>", "one\ntwo\nthree"],
     ["end-tag look-alike", "<p>x</p><script>a='</scripty>'; b=1</script><p>y</p>", "x\ny"],
@@ -220,6 +247,20 @@ describe("htmlToText", () => {
     ["end tag with spaces", "<script>a</script  ><p>z</p>", "z"],
   ])("keeps the page's text: %s", (_, html, text) => {
     expect(htmlToText(html).text).toBe(text);
+  });
+
+  test("the page title is the document's, not an icon's", () => {
+    expect(
+      htmlToText(
+        "<head><title>Real &amp; Right</title></head><body><svg><title>Icon</title></svg>x",
+      ),
+    ).toEqual({ title: "Real & Right", text: "x" });
+  });
+
+  test("decodes common named entities and ignores unknown ones", () => {
+    expect(htmlToText("<p>&copy; 2026 &hellip; &constructor; &bogus;</p>").text).toBe(
+      "© 2026 … &constructor; &bogus;",
+    );
   });
 
   test("drops comments and keeps paragraph breaks", () => {
