@@ -78,7 +78,55 @@ describe("POST /api/fetch", () => {
   });
 });
 
+describe("POST /api/fetch charset", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  // "<p>中文</p>" in Big5: 中 = A4 A4, 文 = A4 E5
+  const big5 = new Uint8Array([
+    0x3c, 0x70, 0x3e, 0xa4, 0xa4, 0xa4, 0xe5, 0x3c, 0x2f, 0x70, 0x3e,
+  ]);
+
+  test.each([
+    ["the header", "text/html; charset=big5", big5],
+    [
+      "a meta tag",
+      "text/html",
+      new Uint8Array([
+        ...new TextEncoder().encode('<meta charset="big5">'),
+        ...big5,
+      ]),
+    ],
+  ])("decodes a Big5 page named in %s", async (_, type, bytes) => {
+    global.fetch = jest.fn(
+      async () =>
+        new Response(bytes, { status: 200, headers: { "content-type": type } }),
+    ) as any;
+    const data = await (
+      await POST(post({ url: "https://example.com.tw/" }))
+    ).json();
+    expect(data.text).toBe("中文");
+  });
+});
+
 describe("htmlToText", () => {
+  test.each([
+    ["unclosed comments", "<!--a".repeat(50000)],
+    ["unclosed scripts", "<script x>a".repeat(20000)],
+    ["unclosed titles", "<title>a".repeat(50000)],
+    ["stray angle brackets", "a < b ".repeat(100000)],
+  ])("stays fast on a page full of %s", (_, html) => {
+    const start = Date.now();
+    htmlToText(html);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  test("an unclosed script hides everything after it", () => {
+    expect(htmlToText("<p>keep</p><script>var x = 1").text).toBe("keep");
+  });
+
   test("drops comments and keeps paragraph breaks", () => {
     expect(htmlToText("<div>one<!-- hidden --></div><div>two</div>").text).toBe(
       "one\ntwo",

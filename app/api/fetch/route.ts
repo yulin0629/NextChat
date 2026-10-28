@@ -4,11 +4,25 @@ import { htmlToText } from "@/app/utils/html-to-text";
 export const runtime = "edge";
 
 const MAX_URL_CHARS = 2000;
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
+// keeps text extraction within a few ms of CPU on the edge
+const MAX_BODY_BYTES = 512 * 1024;
 const MAX_TEXT_CHARS = 12000;
 const TIMEOUT_MS = 15 * 1000;
 
-async function readCapped(res: Response) {
+// charset from the header, else from a <meta> tag near the top; utf-8 when unknown
+function pageCharset(type: string, head: Uint8Array) {
+  // the meta tag is ASCII, so a utf-8 read of the first bytes finds it
+  const sniff = new TextDecoder().decode(head.subarray(0, 2048));
+  const label = (type.match(/charset=["']?([\w-]+)/i) ??
+    sniff.match(/<meta[^>]+charset=["']?([\w-]+)/i))?.[1];
+  try {
+    return new TextDecoder(label || "utf-8");
+  } catch {
+    return new TextDecoder("utf-8");
+  }
+}
+
+async function readCapped(res: Response, type: string) {
   const reader = res.body?.getReader();
   if (!reader) return "";
   const chunks: Uint8Array[] = [];
@@ -28,7 +42,7 @@ async function readCapped(res: Response) {
     offset += part.length;
     if (offset >= all.length) break;
   }
-  return new TextDecoder().decode(all);
+  return pageCharset(type, all).decode(all);
 }
 
 // Backs the Web Search tool's fetch_url: reads one public page straight from
@@ -72,7 +86,7 @@ export async function POST(req: NextRequest) {
         { status: 415 },
       );
     }
-    const body = await readCapped(res);
+    const body = await readCapped(res, type);
     const { title, text } = isHtml
       ? htmlToText(body)
       : { title: "", text: body.trim() };

@@ -20,27 +20,52 @@ function decodeEntities(s: string) {
   });
 }
 
-// debt: ceiling: regex tag stripping, no layout or JS rendering; upgrade: a real
+const DROP_OPEN = /<!--|<(script|style|noscript|svg|template|iframe|head)\b/g;
+
+// Drops comments and non-text blocks in one forward pass, so cost stays linear
+// even for pages full of unclosed tags; an unclosed block runs to the end.
+function dropBlocks(html: string) {
+  const lower = html.toLowerCase();
+  let out = "";
+  let i = 0;
+  while (i < html.length) {
+    DROP_OPEN.lastIndex = i;
+    const m = DROP_OPEN.exec(lower);
+    if (!m) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, m.index) + " ";
+    const close = m[1] ? `</${m[1]}` : "-->";
+    const end = lower.indexOf(close, m.index + m[0].length);
+    if (end < 0) break;
+    const gt = m[1] ? lower.indexOf(">", end) : end + 2;
+    i = gt < 0 ? html.length : gt + 1;
+  }
+  return out;
+}
+
+function pageTitle(html: string) {
+  const lower = html.toLowerCase();
+  const open = lower.indexOf("<title");
+  const start = open < 0 ? -1 : lower.indexOf(">", open);
+  const end = start < 0 ? -1 : lower.indexOf("</title", start);
+  return end < 0 ? "" : decodeEntities(html.slice(start + 1, end)).trim();
+}
+
+// debt: ceiling: tag stripping, no layout or JS rendering; upgrade: a real
 // HTML parser if pages come back as menus or empty text.
 export function htmlToText(html: string) {
-  const title = decodeEntities(
-    html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "",
-  ).trim();
   const text = decodeEntities(
-    html
-      .replace(/<!--[\s\S]*?-->/g, " ")
+    dropBlocks(html)
       .replace(
-        /<(script|style|noscript|svg|template|iframe|head)\b[\s\S]*?<\/\1\s*>/gi,
-        " ",
-      )
-      .replace(
-        /<(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/section|\/article)\b[^>]*>/gi,
+        /<(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/section|\/article)\b[^<>]*>/gi,
         "\n",
       )
-      .replace(/<[^>]+>/g, " "),
+      .replace(/<[^<>]*>/g, " "),
   )
-    .replace(/[ \t\f\v ]+/g, " ")
+    .replace(/[ \t\f\v\u00a0]+/g, " ")
     .replace(/ *\n[\s]*/g, "\n")
     .trim();
-  return { title, text };
+  return { title: pageTitle(html), text };
 }
