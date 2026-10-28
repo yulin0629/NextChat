@@ -27,14 +27,15 @@ describe("built-in web search plugin", () => {
     expect(plugin?.title).toBe("Web Search");
   });
 
-  test("becomes one search_web function that takes a query", () => {
+  test("becomes search_web (takes a query) and fetch_url (takes a url)", () => {
     const [tools, funcs] = usePluginStore
       .getState()
       .getAsTools([WEB_SEARCH_PLUGIN_ID]) as [any[], Record<string, Function>];
-    expect(tools).toHaveLength(1);
-    expect(tools[0].function.name).toBe("search_web");
-    expect(tools[0].function.parameters.required).toEqual(["query"]);
-    expect(Object.keys(funcs)).toEqual(["search_web"]);
+    const byName = Object.fromEntries(
+      tools.map((t) => [t.function.name, t.function.parameters.required]),
+    );
+    expect(byName).toEqual({ search_web: ["query"], fetch_url: ["url"] });
+    expect(Object.keys(funcs).sort()).toEqual(["fetch_url", "search_web"]);
   });
 
   test("calls this app's /api/search directly, not through /api/proxy", () => {
