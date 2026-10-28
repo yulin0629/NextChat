@@ -58,7 +58,8 @@ async function readCapped(res: Response, type: string, isHtml: boolean) {
   if (!reader) return { body: "", capped: false };
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (size < MAX_BODY_BYTES) {
+  // one byte past the cap tells a page of exactly the cap from a longer one
+  while (size <= MAX_BODY_BYTES) {
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
@@ -75,7 +76,7 @@ async function readCapped(res: Response, type: string, isHtml: boolean) {
   }
   return {
     body: pageDecoder(type, all, isHtml).decode(all),
-    capped: size >= MAX_BODY_BYTES,
+    capped: size > MAX_BODY_BYTES,
   };
 }
 
@@ -112,7 +113,9 @@ export async function POST(req: NextRequest) {
         { status: 502 },
       );
     }
-    const type = res.headers.get("content-type") ?? "";
+    // a repeated header arrives joined by ", "; the last value is the one browsers use
+    const type =
+      (res.headers.get("content-type") ?? "").split(",").pop()?.trim() ?? "";
     // not /xml/ alone: Office files are "application/vnd.openxmlformats-…"
     const isHtml =
       /^\s*(text\/html|text\/xml|application\/(xhtml\+|[\w.-]+\+)?xml)\s*(;|$)/i.test(

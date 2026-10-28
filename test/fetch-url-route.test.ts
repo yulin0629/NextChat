@@ -84,6 +84,29 @@ describe("POST /api/fetch", () => {
     expect(data.truncated).toBe(true);
   });
 
+  test("not truncated when the page is exactly as long as the cap", async () => {
+    const head = "<p>short text</p><!--";
+    fetchMock.mockResolvedValue(
+      page(head + "x".repeat(2 * 1024 * 1024 - head.length - 3) + "-->"),
+    );
+    const data = await (await POST(post({ url: "https://example.com/big" }))).json();
+    expect(data.text).toBe("short text");
+    expect(data.truncated).toBe(false);
+  });
+
+  test("reads HTML when the server sends its content type twice", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("<p>hello <b>world</b></p>", {
+        headers: [
+          ["content-type", "text/html"],
+          ["content-type", "text/html; charset=utf-8"],
+        ],
+      }),
+    );
+    const data = await (await POST(post({ url: "https://example.com/" }))).json();
+    expect(data.text).toBe("hello world");
+  });
+
   test("415 for binary content such as a PDF", async () => {
     fetchMock.mockResolvedValue(page("%PDF-1.7", "application/pdf"));
     const res = await POST(post({ url: "https://example.com/a.pdf" }));
@@ -194,6 +217,7 @@ describe("htmlToText", () => {
     ["unclosed scripts", "<script x>a".repeat(20000)],
     ["unclosed titles", "<title>a".repeat(50000)],
     ["stray angle brackets", "a < b ".repeat(100000)],
+    ["svgs that never close", "<svg>a".repeat(20000)],
   ])("stays fast on a page full of %s", (_, html) => {
     const start = Date.now();
     htmlToText(html);
@@ -255,6 +279,23 @@ describe("htmlToText", () => {
         "<head><title>Real &amp; Right</title></head><body><svg><title>Icon</title></svg>x",
       ),
     ).toEqual({ title: "Real & Right", text: "x" });
+  });
+
+  test("an unclosed svg hides only its start tag, not the rest of the page", () => {
+    expect(htmlToText("<p>a</p><svg><path d=1></path><p>after svg</p>").text).toBe(
+      "a\nafter svg",
+    );
+  });
+
+  test("a quote inside an unquoted attribute value is plain text", () => {
+    expect(htmlToText("<a href=/q?a='x>link</a><p>after</p>").text).toBe("link after");
+    expect(htmlToText('<a href=/q?a="x>link</a><p>after</p>').text).toBe("link after");
+  });
+
+  test('"--!>" ends a comment', () => {
+    expect(htmlToText("<p>a</p><!-- c --!><p>after</p><!-- d -->").text).toBe(
+      "a\nafter",
+    );
   });
 
   test("decodes common named entities and ignores unknown ones", () => {

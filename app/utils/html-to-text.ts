@@ -40,8 +40,9 @@ function decodeEntities(s: string) {
   });
 }
 
-// Elements whose content is never page text. Raw-text elements (script, style,
-// textarea, title, ...) cannot hold tags, so their content is skipped up to the end tag.
+// Elements whose content is never page text, skipped up to their end tag. Raw-text
+// elements (script, style, textarea, title, ...) cannot hold tags; svg and template
+// can, so an unclosed one skips only its start tag. A nested <svg> ends the skip early.
 const SKIP = new Set([
   "script",
   "style",
@@ -61,7 +62,9 @@ const LINE_BREAK = new Set(
     .concat(["/main", "/aside", "/dt", "/dd", "/figcaption"])
     .concat(["/h1", "/h2", "/h3", "/h4", "/h5", "/h6"]),
 );
+const HOLDS_TAGS = new Set(["svg", "template"]);
 const END_TAG: Record<string, RegExp> = {};
+const COMMENT_END = /--!?>/g;
 
 const isAlpha = (c: number) => (c | 32) >= 97 && (c | 32) <= 122;
 const isSpace = (c: number) => c === 32 || (c >= 9 && c <= 13);
@@ -80,18 +83,30 @@ function tagEnd(html: string, from: number) {
       const close = html.indexOf(q, v + 1);
       if (close < 0) return -1;
       j = close;
+    } else {
+      // an unquoted value runs to whitespace or ">"; quotes inside it are plain text
+      while (
+        v < html.length &&
+        !isSpace(html.charCodeAt(v)) &&
+        html[v] !== ">"
+      ) {
+        v++;
+      }
+      j = v - 1;
     }
   }
   return -1;
 }
 
 // A small HTML tokenizer: one forward pass, so cost stays linear on any input. Where
-// the input ends inside a tag, comment or skipped element (a broken page, or our byte
+// the input ends inside a tag, comment or raw-text element (a broken page, or our byte
 // cap), the rest is dropped, as a browser would not show it as text either.
 // debt: ceiling: no layout or JS rendering; upgrade: a real HTML parser if pages
 // come back as menus or empty text.
 export function htmlToText(html: string) {
   const parts: string[] = [];
+  // names whose end tag no longer appears, so later start tags need no search
+  const noEndTag = new Set<string>();
   let title = "";
   let i = 0;
   while (i < html.length) {
@@ -107,8 +122,10 @@ export function htmlToText(html: string) {
       if (html.startsWith(">", lt + 4)) end = lt + 4;
       else if (html.startsWith("->", lt + 4)) end = lt + 5;
       else {
-        const close = html.indexOf("-->", lt + 4);
-        end = close < 0 ? -1 : close + 2;
+        // "--!>" also ends a comment
+        COMMENT_END.lastIndex = lt + 4;
+        const close = COMMENT_END.exec(html);
+        end = close ? close.index + close[0].length - 1 : -1;
       }
       if (end < 0) break;
       parts.push(" ");
@@ -141,14 +158,19 @@ export function htmlToText(html: string) {
     if (end < 0) break;
     i = end + 1;
     const selfClosingSvg = name === "svg" && html.charCodeAt(end - 1) === 47;
-    if (!closing && SKIP.has(name) && !selfClosingSvg) {
+    if (!closing && SKIP.has(name) && !selfClosingSvg && !noEndTag.has(name)) {
       const endTag = (END_TAG[name] ??= new RegExp(
         `</${name}(?=[\\s/>])`,
         "gi",
       ));
       endTag.lastIndex = i;
       const found = endTag.exec(html);
-      if (!found) break;
+      if (!found) {
+        if (!HOLDS_TAGS.has(name)) break;
+        noEndTag.add(name);
+        parts.push(" ");
+        continue;
+      }
       if (name === "title" && !title) {
         title = decodeEntities(html.slice(i, found.index)).trim();
       }
