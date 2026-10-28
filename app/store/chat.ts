@@ -18,7 +18,6 @@ import { showToast } from "../components/ui-lib";
 import {
   DEFAULT_INPUT_TEMPLATE,
   DEFAULT_MODELS,
-  DEFAULT_SYSTEM_TEMPLATE,
   GEMINI_SUMMARIZE_MODEL,
   DEEPSEEK_SUMMARIZE_MODEL,
   KnowledgeCutOffDate,
@@ -119,35 +118,43 @@ function createEmptySession(): ChatSession {
   };
 }
 
+// Subscription-backed on this deployment, so titles and memory summaries cost no cash.
+const PREFERRED_SUMMARIZE_MODEL = "gpt-6-luna";
+
+// Every model gets the current time; most have no other way to know today's date.
+const SYSTEM_TEMPLATE = `
+Current model: {{model}}
+Current time: {{time}}
+`;
+
 function getSummarizeModel(
   currentModel: string,
   providerName: string,
 ): string[] {
-  // if it is using gpt-* models, force to use 4o-mini to summarize
+  const configStore = useAppConfig.getState();
+  const accessStore = useAccessStore.getState();
+  const allModel = collectModelsWithDefaultModel(
+    configStore.models,
+    [accessStore.customModels, configStore.customModels]
+      .filter(Boolean)
+      .join(","),
+    accessStore.defaultModel,
+  );
+  const candidates = [PREFERRED_SUMMARIZE_MODEL];
   if (currentModel.startsWith("gpt") || currentModel.startsWith("chatgpt")) {
-    const configStore = useAppConfig.getState();
-    const accessStore = useAccessStore.getState();
-    const allModel = collectModelsWithDefaultModel(
-      configStore.models,
-      [accessStore.customModels, configStore.customModels].filter(Boolean).join(","),
-      accessStore.defaultModel,
-    );
-    const summarizeModel = allModel.find(
-      (m) => m.name === SUMMARIZE_MODEL && m.available,
-    );
-    if (summarizeModel) {
-      return [
-        summarizeModel.name,
-        summarizeModel.provider?.providerName as string,
-      ];
+    candidates.push(SUMMARIZE_MODEL);
+  } else if (currentModel.startsWith("gemini")) {
+    candidates.push(GEMINI_SUMMARIZE_MODEL);
+  } else if (currentModel.startsWith("deepseek-")) {
+    candidates.push(DEEPSEEK_SUMMARIZE_MODEL);
+  }
+  // only models the user can actually call; otherwise the summary request just fails
+  for (const name of candidates) {
+    const model = allModel.find((m) => m.name === name && m.available);
+    if (model) {
+      return [model.name, model.provider?.providerName as string];
     }
   }
-  if (currentModel.startsWith("gemini")) {
-    return [GEMINI_SUMMARIZE_MODEL, ServiceProvider.Google];
-  } else if (currentModel.startsWith("deepseek-")) {
-    return [DEEPSEEK_SUMMARIZE_MODEL, ServiceProvider.DeepSeek];
-  }
-
   return [currentModel, providerName];
 }
 
@@ -549,11 +556,8 @@ export const useChatStore = createPersistStore(
         // in-context prompts
         const contextPrompts = session.mask.context.slice();
 
-        // system prompts, to get close to OpenAI Web ChatGPT
-        const shouldInjectSystemPrompts =
-          modelConfig.enableInjectSystemPrompts &&
-          (session.mask.modelConfig.model.startsWith("gpt-") ||
-            session.mask.modelConfig.model.startsWith("chatgpt-"));
+        // system prompts: current model and time, for every model
+        const shouldInjectSystemPrompts = modelConfig.enableInjectSystemPrompts;
 
         const mcpEnabled = await isMcpEnabled();
         const mcpSystemPrompt = mcpEnabled ? await getMcpSystemPrompt() : "";
@@ -567,7 +571,7 @@ export const useChatStore = createPersistStore(
               content:
                 fillTemplateWith("", {
                   ...modelConfig,
-                  template: DEFAULT_SYSTEM_TEMPLATE,
+                  template: SYSTEM_TEMPLATE,
                 }) + mcpSystemPrompt,
             }),
           ];
