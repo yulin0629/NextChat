@@ -1,8 +1,4 @@
-import {
-  CACHE_URL_PREFIX,
-  UPLOAD_URL,
-  REQUEST_TIMEOUT_MS,
-} from "@/app/constant";
+import { CACHE_URL_PREFIX, UPLOAD_URL } from "@/app/constant";
 import { MultimodalContent, RequestMessage } from "@/app/client/api";
 import Locale from "@/app/locales";
 import {
@@ -188,6 +184,8 @@ export function stream(
   ) => void,
   options: any,
 ) {
+  // only user turns (which pass onBeforeTool) may call tools; titles and memory summaries must not
+  if (!options?.onBeforeTool) tools = [];
   let responseText = "";
   let remainText = "";
   let finished = false;
@@ -411,6 +409,8 @@ export function streamWithThink(
   ) => void,
   options: any,
 ) {
+  // only user turns (which pass onBeforeTool) may call tools; titles and memory summaries must not
+  if (!options?.onBeforeTool) tools = [];
   let responseText = "";
   let remainText = "";
   let finished = false;
