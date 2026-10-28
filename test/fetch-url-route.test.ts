@@ -111,6 +111,63 @@ describe("POST /api/fetch charset", () => {
   });
 });
 
+describe("POST /api/fetch charset choice", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+  const enc = (t: string) => new TextEncoder().encode(t);
+  async function textOf(type: string, bytes: Uint8Array) {
+    global.fetch = jest.fn(
+      async () =>
+        new Response(bytes, { status: 200, headers: { "content-type": type } }),
+    ) as any;
+    return (await (await POST(post({ url: "https://example.com/" }))).json())
+      .text;
+  }
+
+  test("a meta tag that claims utf-16 is read as utf-8", async () => {
+    expect(
+      await textOf("text/html", enc('<meta charset="utf-16"><p>Hello wörld 中文</p>')),
+    ).toBe("Hello wörld 中文");
+  });
+
+  test("plain text is never sniffed for meta tags", async () => {
+    const t = 'Example: <meta charset="big5"> is how 中文 pages say it';
+    expect(await textOf("text/plain", enc(t))).toBe(t);
+  });
+
+  test("charset= inside another attribute's value is ignored", async () => {
+    expect(
+      await textOf(
+        "text/html",
+        enc('<meta name="description" content="set charset=big5 for legacy"><meta charset="utf-8"><p>中文</p>'),
+      ),
+    ).toBe("中文");
+  });
+
+  test("http-equiv content-type still works", async () => {
+    expect(
+      await textOf(
+        "text/html",
+        new Uint8Array([
+          ...enc('<meta http-equiv="Content-Type" content="text/html; charset=big5">'),
+          0xa4, 0xa4, 0xa4, 0xe5,
+        ]),
+      ),
+    ).toBe("中文");
+  });
+
+  test("a byte order mark wins over the header", async () => {
+    expect(
+      await textOf(
+        "text/html; charset=iso-8859-1",
+        new Uint8Array([0xef, 0xbb, 0xbf, ...enc("<p>中文</p>")]),
+      ),
+    ).toBe("中文");
+  });
+});
+
 describe("htmlToText", () => {
   test.each([
     ["unclosed comments", "<!--a".repeat(50000)],
@@ -123,8 +180,46 @@ describe("htmlToText", () => {
     expect(Date.now() - start).toBeLessThan(500);
   });
 
-  test("an unclosed script hides everything after it", () => {
-    expect(htmlToText("<p>keep</p><script>var x = 1").text).toBe("keep");
+  test.each([
+    ["unclosed comments", "<!--a".repeat(50000)],
+    ["unclosed svgs", "<svg a".repeat(50000)],
+    ["titles without >", "<title a".repeat(50000)],
+  ])("stays fast on a page full of %s (no > at all)", (_, html) => {
+    const start = Date.now();
+    htmlToText(html);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  test("keeps positions right after characters that grow when lowercased", () => {
+    const html =
+      "<head><title>İstanbul</title></head><p>İİİİİİİİİİ</p><script>SECRETJSCODE</script><p>visible text here</p>";
+    expect(htmlToText(html)).toEqual({
+      title: "İstanbul",
+      text: "İİİİİİİİİİ\nvisible text here",
+    });
+  });
+
+  test("strips a tag that is missing its > the way browsers read it", () => {
+    // cna.com.tw menu markup
+    expect(
+      htmlToText(
+        "<li><a class='menuUrl' href='/list/aipl.aspx' <span class='_ellipsis'>政治</span></a></li>",
+      ).text,
+    ).toBe("政治");
+    expect(htmlToText('<a title="x<y" href="/">link text</a>').text).toBe(
+      "link text",
+    );
+  });
+
+  test.each([
+    ["no </head>", "<head><title>T</title><body><p>body text</p>", "T body text"],
+    ["self-closing svg", '<p>before</p><svg width="0"/><p>after svg</p>', "before\nafter svg"],
+    ["empty comment <!-->", "<p>one</p><!--><p>two</p><!-- c --><p>three</p>", "one\ntwo\nthree"],
+    ["end-tag look-alike", "<p>x</p><script>a='</scripty>'; b=1</script><p>y</p>", "x\ny"],
+    ["custom element named like a block", "<svg-icon>icon</svg-icon><p>text</p><svg><path/></svg>", "icon text"],
+    ["end tag with spaces", "<script>a</script  ><p>z</p>", "z"],
+  ])("keeps the page's text: %s", (_, html, text) => {
+    expect(htmlToText(html).text).toBe(text);
   });
 
   test("drops comments and keeps paragraph breaks", () => {

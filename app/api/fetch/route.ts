@@ -9,12 +9,42 @@ const MAX_BODY_BYTES = 512 * 1024;
 const MAX_TEXT_CHARS = 12000;
 const TIMEOUT_MS = 15 * 1000;
 
-// charset from the header, else from a <meta> tag near the top; utf-8 when unknown
-function pageCharset(type: string, head: Uint8Array) {
+// The meta charset of an HTML page, from its first 2 KB (attributes parsed, so a
+// "charset=" inside another attribute's value is not taken).
+function metaCharset(head: Uint8Array) {
   // the meta tag is ASCII, so a utf-8 read of the first bytes finds it
-  const sniff = new TextDecoder().decode(head.subarray(0, 2048));
-  const label = (type.match(/charset=["']?([\w-]+)/i) ??
-    sniff.match(/<meta[^>]+charset=["']?([\w-]+)/i))?.[1];
+  const text = new TextDecoder().decode(head.subarray(0, 2048));
+  for (const tag of text.match(/<meta\b[^>]*>/gi) ?? []) {
+    const attrs: Record<string, string> = {};
+    for (const a of tag.matchAll(
+      /([^\s"'=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g,
+    )) {
+      attrs[a[1].toLowerCase()] = a[2] ?? a[3] ?? a[4];
+    }
+    const label =
+      attrs.charset ??
+      (attrs["http-equiv"]?.toLowerCase() === "content-type"
+        ? attrs.content?.match(/charset=\s*["']?([\w-]+)/i)?.[1]
+        : undefined);
+    // a page readable enough to find its meta tag is not utf-16 (WHATWG prescan rule)
+    if (label) return /^utf-16/i.test(label) ? "utf-8" : label;
+  }
+}
+
+// Byte order mark first, then the header, then (HTML only) the meta tag; utf-8 when unknown.
+function pageDecoder(type: string, body: Uint8Array, isHtml: boolean) {
+  const bom =
+    body[0] === 0xef && body[1] === 0xbb && body[2] === 0xbf
+      ? "utf-8"
+      : body[0] === 0xff && body[1] === 0xfe
+      ? "utf-16le"
+      : body[0] === 0xfe && body[1] === 0xff
+      ? "utf-16be"
+      : undefined;
+  const label =
+    bom ??
+    type.match(/charset=\s*["']?([\w-]+)/i)?.[1] ??
+    (isHtml ? metaCharset(body) : undefined);
   try {
     return new TextDecoder(label || "utf-8");
   } catch {
@@ -22,7 +52,7 @@ function pageCharset(type: string, head: Uint8Array) {
   }
 }
 
-async function readCapped(res: Response, type: string) {
+async function readCapped(res: Response, type: string, isHtml: boolean) {
   const reader = res.body?.getReader();
   if (!reader) return "";
   const chunks: Uint8Array[] = [];
@@ -42,7 +72,7 @@ async function readCapped(res: Response, type: string) {
     offset += part.length;
     if (offset >= all.length) break;
   }
-  return pageCharset(type, all).decode(all);
+  return pageDecoder(type, all, isHtml).decode(all);
 }
 
 // Backs the Web Search tool's fetch_url: reads one public page straight from
@@ -86,7 +116,7 @@ export async function POST(req: NextRequest) {
         { status: 415 },
       );
     }
-    const body = await readCapped(res, type);
+    const body = await readCapped(res, type, isHtml);
     const { title, text } = isHtml
       ? htmlToText(body)
       : { title: "", text: body.trim() };
