@@ -644,6 +644,22 @@ export const useChatStore = createPersistStore(
           ...reversedRecentMessages.reverse(),
         ];
 
+        // One leading system message: Qwen-style chat templates reject a second one,
+        // and the injected prompt, long-term memory and mask context can each add one.
+        const firstOther = recentMessages.findIndex(
+          (m) => m.role !== "system" || typeof m.content !== "string",
+        );
+        const systemCount = firstOther < 0 ? recentMessages.length : firstOther;
+        if (systemCount > 1) {
+          recentMessages.splice(0, systemCount, {
+            ...recentMessages[0],
+            content: recentMessages
+              .slice(0, systemCount)
+              .map((m) => m.content)
+              .join("\n\n"),
+          });
+        }
+
         return recentMessages;
       },
 

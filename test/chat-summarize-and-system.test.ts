@@ -131,6 +131,21 @@ describe("system prompt", () => {
     expect(system).not.toContain("Knowledge cutoff");
   });
 
+  test("prompt, memory and mask context arrive as one leading system message", async () => {
+    const session = sessionWith("qwen3.8-27b");
+    useChatStore.getState().updateTargetSession(session, (s) => {
+      s.memoryPrompt = "Earlier: the user likes tea.";
+      s.lastSummarizeIndex = 1;
+      s.mask.context = [createMessage({ role: "system", content: "You are a tea expert." })];
+    });
+    const messages = await useChatStore.getState().getMessagesWithMemory();
+    expect(messages.map((m) => m.role)).toEqual(["system", "user", "assistant"]);
+    const system = messages[0].content as string;
+    expect(system).toContain("Current model: qwen3.8-27b");
+    expect(system).toContain("Earlier: the user likes tea.");
+    expect(system).toContain("You are a tea expert.");
+  });
+
   test("stays identical within a day, so the prompt cache keeps hitting", async () => {
     sessionWith("gemini-4-argon");
     jest.useFakeTimers().setSystemTime(new Date(2026, 9, 28, 9, 0, 0));
