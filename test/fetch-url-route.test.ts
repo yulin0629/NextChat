@@ -2,7 +2,8 @@
  * @jest-environment node
  */
 import { NextRequest } from "next/server";
-import { POST, htmlToText } from "../app/api/fetch/route";
+import { POST } from "../app/api/fetch/route";
+import { htmlToText } from "../app/utils/html-to-text";
 
 function post(body: unknown) {
   return new NextRequest("http://localhost/api/fetch", {
