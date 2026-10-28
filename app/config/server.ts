@@ -1,5 +1,5 @@
 import md5 from "spark-md5";
-import { DEFAULT_MODELS, DEFAULT_GA_ID } from "../constant";
+import { DEFAULT_MODELS } from "../constant";
 import { isGPT4Model } from "../utils/model";
 
 declare global {
@@ -254,7 +254,7 @@ export const getServerSideConfig = () => {
     ai302ApiKey: getApiKey(process.env.AI302_API_KEY),
 
     gtmId: process.env.GTM_ID,
-    gaId: process.env.GA_ID || DEFAULT_GA_ID,
+    gaId: process.env.GA_ID,
 
     needCode: ACCESS_CODES.size > 0,
     code: process.env.CODE,
