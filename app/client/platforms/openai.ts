@@ -42,6 +42,7 @@ import { getClientConfig } from "@/app/config/client";
 import {
   getMessageTextContent,
   isVisionModel,
+  isEnvVisionModel,
   isDalle3 as _isDalle3,
   getTimeoutMSByModel,
 } from "@/app/utils";
@@ -295,8 +296,13 @@ export class ChatGPTApi implements LLMApi {
         requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
       }
 
-      // add max_tokens to vision model
-      if (visionModel && !isO1OrO3 && !isGpt5) {
+      // add max_tokens to vision model; VISION_MODELS entries keep the upstream default
+      if (
+        visionModel &&
+        !isO1OrO3 &&
+        !isGpt5 &&
+        !isEnvVisionModel(options.config.model)
+      ) {
         requestPayload["max_tokens"] = Math.max(modelConfig.max_tokens, 4000);
       }
     }

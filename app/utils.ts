@@ -280,10 +280,15 @@ export function getMessageImages(message: RequestMessage): string[] {
   return urls;
 }
 
-export function isVisionModel(model: string) {
+// models the deployment lists in VISION_MODELS
+export function isEnvVisionModel(model: string) {
   const visionModels = useAccessStore.getState().visionModels;
   const envVisionModels = visionModels?.split(",").map((m) => m.trim());
-  if (envVisionModels?.includes(model)) {
+  return !!envVisionModels?.includes(model);
+}
+
+export function isVisionModel(model: string) {
+  if (isEnvVisionModel(model)) {
     return true;
   }
   return (
